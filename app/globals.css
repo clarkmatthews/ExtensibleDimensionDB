@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --muted: #000000;
+  --line: #d5dbe3;
+  --card: #ffffff;
+  --pine: #0b2a5b;
+  --pine-dark: #071c3d;
+  --sidebar: #0b2a5b;
+  --danger: #9c2f2f;
+  --warn: #8a5a12;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-card: var(--card);
+  --color-pine: var(--pine);
+  --color-pine-dark: var(--pine-dark);
+  --color-sidebar: var(--sidebar);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-geist-sans), "Segoe UI", sans-serif;
+}
+
+h1, h2, h3 {
+  color: var(--pine);
+}
+
+thead th {
+  background: var(--sidebar);
+  color: white;
+}
+
+input, select, textarea, button {
+  font: inherit;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  color: var(--ink);
+}
+
+.field:focus {
+  outline: 2px solid #c5d4ef;
+  border-color: var(--pine);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: 0.5rem;
+  background: var(--pine);
+  color: white;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.btn:hover {
+  background: var(--pine-dark);
+}
+
+.btn-quiet {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line);
+  background: white;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8125rem;
+  color: var(--ink);
+}
+
+.btn-quiet:hover {
+  background: #eef3f9;
+}
+
+header .btn-quiet {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: transparent;
+  color: white;
+}
+
+header .btn-quiet:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+}
+
+.label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+}
+
+.help-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-left: 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--pine);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.help-mark:hover,
+.help-mark:focus {
+  border-color: var(--pine);
+  outline: 2px solid #c5d4ef;
+}
+
+.section-toggle {
+  list-style: none;
+}
+
+.section-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.section-toggle .mark {
+  display: inline-flex;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: white;
+  color: var(--pine);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.section-toggle .mark::before {
+  content: "+";
+}
+
+details[open] > .section-toggle .mark::before {
+  content: "−";
+}
+
+.help-pop {
+  position: fixed;
+  z-index: 60;
+  width: 18rem;
+  max-width: calc(100vw - 1rem);
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.8125rem;
+  font-weight: 450;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: 0 8px 24px rgba(28, 25, 21, 0.12);
+}

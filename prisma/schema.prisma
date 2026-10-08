@@ -1,0 +1,581 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DataType {
+  TEXT
+  BIG_TEXT
+  NUMERIC
+  DATE
+  TIME
+  CHECKBOX
+  RADIO
+  DROPDOWN
+  DATETIME
+  ZIPCODE
+  ADDRESS
+  EMAIL
+  PHONE
+  COORDINATE
+}
+
+enum ChoiceSource {
+  MANUAL
+  US_STATE
+  US_CITY
+}
+
+enum SubjectType {
+  DEPARTMENT
+  GROUP
+  USER
+}
+
+enum GrantLevel {
+  NONE
+  VIEW
+  EDIT
+}
+
+enum AppModule {
+  INBOX
+  STORES
+  TASK_REPORT
+  DEFINITION
+  LISTS
+  API_CONFIG
+  EMAIL_CONFIG
+  SITE_CONFIG
+  PERMISSIONS
+  USERS
+  ACCESS
+  WORKFLOWS
+  NOTICES
+}
+
+enum ApiFormat {
+  JSON
+  XML
+}
+
+enum MailSecurity {
+  NONE
+  STARTTLS
+  TLS
+}
+
+enum TaskState {
+  UNACCEPTED
+  ACCEPTED
+  COMPLETE
+  SKIPPED
+  SUSPENDED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum TaskAction {
+  ACCEPT
+  REJECT
+  UPGRADE
+  DOWNGRADE
+  PERFORM
+  WATCH
+  UNWATCH
+  ASSIGN
+  SKIP
+  DONE
+  POSTPONE
+  SUSPEND
+  COMMENT
+}
+
+enum WorkflowKind {
+  NOTIFY
+  TASK
+}
+
+enum StepFieldRule {
+  MUST_HAVE_VALUE
+  MUST_CHANGE
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String   @default("")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  groups      Group[]
+}
+
+model Group {
+  id           String      @id @default(cuid())
+  name         String
+  description  String      @default("")
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  members      UserGroup[]
+  steps        WorkflowStep[]
+  tasks        Task[]
+  recipients   WorkflowRecipient[]
+}
+
+model User {
+  id                 String         @id @default(cuid())
+  email              String         @unique
+  name               String
+  passwordHash       String
+  isActive           Boolean        @default(true)
+  isAdmin            Boolean        @default(false)
+  canDefineWorkflows Boolean        @default(false)
+  createdAt          DateTime       @default(now())
+  groups             UserGroup[]
+  assignedTasks      Task[]         @relation("Assignee")
+  originated         StoreProcess[] @relation("Originator")
+  events             TaskEvent[]
+  watches            TaskWatcher[]
+  notifications      Notification[]
+  workflowSteps      WorkflowStep[] @relation("WorkflowAssignee")
+  fieldChanges       FieldChange[]
+  workflowRecipients WorkflowRecipient[]
+}
+
+model UserGroup {
+  userId  String
+  groupId String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  fields      FieldDefinition[]
+  permissions CategoryPermission[]
+  apiScopes   ApiEndpointCategory[]
+  processes   WorkflowProcessCategory[]
+}
+
+model FieldDefinition {
+  id                String    @id @default(cuid())
+  key               String    @unique
+  friendlyName      String
+  description       String    @default("")
+  dataType          DataType
+  categoryId        String
+  category          Category  @relation(fields: [categoryId], references: [id])
+  sortOrder         Int       @default(0)
+  isActive          Boolean   @default(true)
+  isRequired        Boolean   @default(false)
+  isStoreKey        Boolean   @default(false)
+  isActiveFilter    Boolean   @default(false)
+  isCreatedDate     Boolean   @default(false)
+  choiceSource      ChoiceSource @default(MANUAL)
+  choiceListId      String?
+  choiceList        ChoiceList?  @relation(fields: [choiceListId], references: [id], onDelete: SetNull)
+  parentFieldId     String?
+  parentField       FieldDefinition?  @relation("ListCorrelation", fields: [parentFieldId], references: [id], onDelete: SetNull)
+  childLists        FieldDefinition[] @relation("ListCorrelation")
+  defaultValue      String    @default("")
+  formatExample     String    @default("")
+  validationPattern String    @default("")
+  useRegex          Boolean   @default(false)
+  maxLength         Int?
+  minValue          Decimal?  @db.Decimal(18, 4)
+  maxValue          Decimal?  @db.Decimal(18, 4)
+  negativeOk        Boolean   @default(false)
+  decimalOk         Boolean   @default(false)
+  numVisible        Int       @default(1)
+  multiple          Boolean   @default(false)
+  is24Hour          Boolean   @default(true)
+  checkboxLabel     String    @default("")
+  minDate           String    @default("")
+  maxDate           String    @default("")
+  createdAt         DateTime  @default(now())
+  options           FieldOption[]
+  values            FieldValue[]
+  permissions       FieldPermission[]
+  stepFields        WorkflowStepField[]
+  apiFields         ApiEndpointField[]
+  changes           FieldChange[]
+  triggerFields     WorkflowTriggerField[]
+}
+
+model ChoiceList {
+  id           String           @id @default(cuid())
+  name         String
+  description  String           @default("")
+  isActive     Boolean          @default(true)
+  choiceSource ChoiceSource     @default(MANUAL)
+  parentListId String?
+  parentList   ChoiceList?      @relation("ListFollows", fields: [parentListId], references: [id], onDelete: SetNull)
+  childLists   ChoiceList[]     @relation("ListFollows")
+  createdAt    DateTime         @default(now())
+  items        ChoiceListItem[]
+  fields       FieldDefinition[]
+}
+
+model ChoiceListItem {
+  id           String     @id @default(cuid())
+  listId       String
+  list         ChoiceList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  label        String
+  value        String
+  parentValues String     @default("")
+  isDefault    Boolean    @default(false)
+  isActive     Boolean    @default(true)
+  sortOrder    Int        @default(0)
+
+  @@index([listId, parentValues])
+}
+
+model FieldOption {
+  id        String          @id @default(cuid())
+  fieldId   String
+  field     FieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  label        String
+  value        String
+  parentValues String          @default("")
+  isDefault    Boolean         @default(false)
+  sortOrder    Int             @default(0)
+}
+
+model Location {
+  id        String         @id @default(cuid())
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  values    FieldValue[]
+  processes StoreProcess[]
+  changes   FieldChange[]
+}
+
+model FieldValue {
+  id            String          @id @default(cuid())
+  locationId    String
+  fieldId       String
+  location      Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  field         FieldDefinition @relation(fields: [fieldId], references: [id])
+  valueText     String?
+  valueNumber   Decimal?        @db.Decimal(18, 4)
+  valueBoolean  Boolean?
+  valueDateTime DateTime?
+  updatedAt     DateTime        @updatedAt
+
+  @@unique([locationId, fieldId])
+}
+
+model CategoryPermission {
+  id                   String      @id @default(cuid())
+  categoryId           String
+  category             Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  subjectType          SubjectType
+  subjectId            String
+  canAddFields         Boolean     @default(false)
+  canRemoveFields      Boolean     @default(false)
+  canEditFields        Boolean     @default(false)
+  canEditCategory      Boolean     @default(false)
+  canAssignPermissions Boolean     @default(false)
+  canViewData          Boolean     @default(false)
+  grantLevel           GrantLevel  @default(NONE)
+  applyToFields        Boolean     @default(false)
+
+  @@unique([categoryId, subjectType, subjectId])
+  @@index([subjectType, subjectId])
+}
+
+model FieldPermission {
+  id          String          @id @default(cuid())
+  fieldId     String
+  field       FieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  subjectType SubjectType
+  subjectId   String
+  canView     Boolean         @default(false)
+  canUpdate   Boolean         @default(false)
+
+  @@unique([fieldId, subjectType, subjectId])
+  @@index([subjectType, subjectId])
+}
+
+model ModulePermission {
+  id          String      @id @default(cuid())
+  module      AppModule
+  subjectType SubjectType
+  subjectId   String
+  grantLevel  GrantLevel  @default(NONE)
+
+  @@unique([module, subjectType, subjectId])
+  @@index([subjectType, subjectId])
+}
+
+model WorkflowProcess {
+  id          String         @id @default(cuid())
+  name        String
+  description String         @default("")
+  isDefault   Boolean        @default(false)
+  isActive    Boolean        @default(true)
+  kind        WorkflowKind   @default(TASK)
+  onCreate    Boolean        @default(false)
+  onChange    Boolean        @default(false)
+  manual      Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  steps       WorkflowStep[]
+  runs        StoreProcess[]
+  categories  WorkflowProcessCategory[]
+  triggers    WorkflowTriggerField[]
+  recipients  WorkflowRecipient[]
+}
+
+model WorkflowStep {
+  id           String            @id @default(cuid())
+  processId    String
+  process      WorkflowProcess   @relation(fields: [processId], references: [id], onDelete: Cascade)
+  name         String
+  sortOrder    Int
+  groupId        String
+  group          Group             @relation(fields: [groupId], references: [id])
+  assigneeUserId String?
+  assigneeUser   User?             @relation("WorkflowAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  deadlineDays   Int               @default(1)
+  fields       WorkflowStepField[]
+  tasks        Task[]
+}
+
+model WorkflowStepField {
+  stepId  String
+  fieldId String
+  rule    StepFieldRule   @default(MUST_HAVE_VALUE)
+  step    WorkflowStep    @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  field   FieldDefinition @relation(fields: [fieldId], references: [id])
+
+  @@id([stepId, fieldId])
+}
+
+model WorkflowProcessCategory {
+  processId  String
+  categoryId String
+  process    WorkflowProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+  category   Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([processId, categoryId])
+}
+
+model WorkflowTriggerField {
+  processId  String
+  fieldId    String
+  matchValue String          @default("")
+  process    WorkflowProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+  field      FieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@id([processId, fieldId])
+}
+
+model WorkflowRecipient {
+  id        String          @id @default(cuid())
+  processId String
+  process   WorkflowProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+  groupId   String?
+  group     Group?          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([processId])
+}
+
+model StoreProcess {
+  id           String          @id @default(cuid())
+  locationId   String
+  location     Location        @relation(fields: [locationId], references: [id])
+  processId    String
+  process      WorkflowProcess @relation(fields: [processId], references: [id])
+  status       String          @default("ACTIVE")
+  originatorId String
+  originator   User            @relation("Originator", fields: [originatorId], references: [id])
+  suspended    Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  tasks        Task[]
+}
+
+model Task {
+  id                String       @id @default(cuid())
+  storeProcessId    String
+  storeProcess      StoreProcess @relation(fields: [storeProcessId], references: [id], onDelete: Cascade)
+  stepId            String
+  step              WorkflowStep @relation(fields: [stepId], references: [id])
+  locationId        String
+  state             TaskState    @default(UNACCEPTED)
+  priority          TaskPriority @default(NORMAL)
+  assigneeGroupId   String
+  assigneeGroup     Group        @relation(fields: [assigneeGroupId], references: [id])
+  assigneeUserId    String?
+  assigneeUser      User?        @relation("Assignee", fields: [assigneeUserId], references: [id])
+  senderUserId      String?
+  deadlineAt        DateTime
+  fieldChangeId     String?
+  fieldChange       FieldChange? @relation(fields: [fieldChangeId], references: [id], onDelete: SetNull)
+  acceptedAt        DateTime?
+  completedAt       DateTime?
+  overdueNotifiedAt DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  events            TaskEvent[]
+  watchers          TaskWatcher[]
+  notifications     Notification[]
+
+  @@index([state, deadlineAt])
+  @@index([locationId])
+}
+
+model TaskEvent {
+  id        String     @id @default(cuid())
+  taskId    String
+  task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  action    TaskAction
+  comment   String     @default("")
+  createdAt DateTime   @default(now())
+}
+
+model TaskWatcher {
+  taskId String
+  userId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+}
+
+model ApiEndpoint {
+  id          String                @id @default(uuid())
+  name        String
+  description String                @default("")
+  secret         String
+  secretOptional Boolean   @default(false)
+  format         ApiFormat @default(JSON)
+  validFrom   DateTime?             @db.Date
+  validTo     DateTime?             @db.Date
+  isActive    Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  categories  ApiEndpointCategory[]
+  fields      ApiEndpointField[]
+  logs        ApiRequestLog[]
+}
+
+model ApiEndpointCategory {
+  endpointId    String
+  categoryId    String
+  applyToFields Boolean     @default(false)
+  endpoint      ApiEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  category      Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([endpointId, categoryId])
+}
+
+model ApiEndpointField {
+  endpointId String
+  fieldId    String
+  endpoint   ApiEndpoint     @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  field      FieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@id([endpointId, fieldId])
+}
+
+model ApiRequestLog {
+  id         String      @id @default(cuid())
+  endpointId String
+  endpoint   ApiEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  createdAt  DateTime    @default(now())
+  sourceIp   String      @default("")
+  status     Int
+  result     String
+
+  @@index([endpointId, createdAt])
+}
+
+model ApiIpBlock {
+  sourceIp     String    @id
+  failureCount Int       @default(0)
+  blockedUntil DateTime?
+  updatedAt    DateTime  @updatedAt
+}
+
+model LoginLock {
+  key          String    @id
+  failureCount Int       @default(0)
+  blockedUntil DateTime?
+  updatedAt    DateTime  @updatedAt
+}
+
+model SiteSettings {
+  id        String   @id @default("default")
+  name      String   @default("Dimension database")
+  updatedAt DateTime @updatedAt
+}
+
+model MailSettings {
+  id                 String       @id @default("default")
+  enabled            Boolean      @default(false)
+  host               String       @default("")
+  port               Int          @default(587)
+  security           MailSecurity @default(STARTTLS)
+  rejectUnauthorized Boolean      @default(true)
+  username           String       @default("")
+  password           String       @default("")
+  fromName           String       @default("")
+  fromEmail          String       @default("")
+  replyTo            String       @default("")
+  updatedAt          DateTime     @updatedAt
+}
+
+model FieldChange {
+  id            String         @id @default(cuid())
+  locationId    String
+  location      Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  fieldId       String
+  field         FieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User           @relation(fields: [userId], references: [id])
+  oldValue      String         @default("")
+  newValue      String         @default("")
+  createdAt     DateTime       @default(now())
+  notifications Notification[]
+  tasks         Task[]
+
+  @@index([locationId, createdAt])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([fieldId])
+}
+
+model Notification {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId        String?
+  task          Task?        @relation(fields: [taskId], references: [id])
+  fieldChangeId String?
+  fieldChange   FieldChange? @relation(fields: [fieldChangeId], references: [id], onDelete: SetNull)
+  message       String
+  createdAt     DateTime     @default(now())
+  readAt        DateTime?
+}
