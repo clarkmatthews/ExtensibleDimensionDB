@@ -88,7 +88,7 @@ export function storedToDisplay(field: DefinedField, value: FieldValue | undefin
   if (!raw) return "";
   if (field.dataType === "CHECKBOX") return raw === "1" ? checkboxCheckedText(field) : "No";
   if (field.dataType === "DATE") return displayDate(raw);
-  if (field.dataType === "RADIO" || field.dataType === "DROPDOWN") {
+  if (field.dataType === "RADIO" || field.dataType === "DROPDOWN" || field.dataType === "RECORD_LINK") {
     const selected = raw.split("|");
     return selected
       .map((item) => field.options.find((option) => option.value === item)?.label ?? item)

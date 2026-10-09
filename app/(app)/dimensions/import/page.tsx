@@ -8,6 +8,7 @@ import { MAX_IMPORT_ROWS } from "@/lib/import";
 import { applyImport, uploadImport } from "@/lib/import-actions";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { listRecordTypes } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Import" };
@@ -24,7 +25,7 @@ const COLUMN_TEXT: Record<ColumnStatus, string> = {
 export default async function ImportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; error?: string }>;
+  searchParams: Promise<{ job?: string; error?: string; type?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -35,6 +36,8 @@ export default async function ImportPage({
   const job = params.job ? await prisma.importJob.findUnique({ where: { id: params.job } }) : null;
   const mine = job && job.userId === user.id ? job : null;
   const summary = mine?.summary as (ImportSummary & { result?: ApplyResult }) | null;
+  const types = await listRecordTypes();
+  const jobType = mine ? types.find((type) => type.id === mine.recordTypeId) : undefined;
 
   return (
     <div className="space-y-6">
@@ -55,6 +58,16 @@ export default async function ImportPage({
 
       {canImport && (!mine || mine.status === "APPLIED") ? (
         <form action={uploadImport} className="panel flex flex-wrap items-end gap-3 p-4">
+          {types.length > 1 ? (
+            <label>
+              <span className="label">Record type</span>
+              <select className="field" name="recordTypeId" defaultValue={params.type ?? types[0]?.id}>
+                {types.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+              </select>
+            </label>
+          ) : (
+            <input type="hidden" name="recordTypeId" value={types[0]?.id ?? ""} />
+          )}
           <label>
             <span className="label">CSV file</span>
             <input className="field" type="file" name="file" accept=".csv,text/csv" required />
@@ -65,7 +78,10 @@ export default async function ImportPage({
 
       {mine && summary ? (
         <section className="panel space-y-4 p-4">
-          <h2 className="text-lg font-semibold">{mine.fileName}</h2>
+          <h2 className="text-lg font-semibold">
+            {mine.fileName}
+            {jobType && types.length > 1 ? <span className="font-normal text-muted"> · {jobType.name} records</span> : null}
+          </h2>
           {summary.fatal ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{summary.fatal}</p> : null}
 
           {summary.result ? (

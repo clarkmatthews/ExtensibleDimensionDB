@@ -5,6 +5,7 @@ import { ModuleDenied } from "@/components/module-denied";
 import { StoreForm, type EditorCategory } from "@/components/store-form";
 import { canEditModule, canSeeValue, canViewModule, categoryAccess, fieldAccess, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { linkedFrom, listRecordTypes, recordLabels, withLinkOptions } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { loadFieldChoices } from "@/lib/list-items";
 import { archiveRecord, restoreRecord, startWorkflow } from "@/lib/store-actions";
@@ -38,10 +39,29 @@ export default async function StorePage({
     });
     openTask?.step.fields.forEach((field) => highlight.add(field.fieldId));
   }
-  const fields = await prisma.fieldDefinition.findMany({
-    where: { isActive: true, category: { isActive: true } },
-    include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
-    orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+  const linked = await withLinkOptions(
+    await prisma.fieldDefinition.findMany({
+      where: { isActive: true, category: { isActive: true, recordTypeId: location.recordTypeId } },
+      include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
+      orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+    }),
+  );
+  // Keep links to records that were archived since, so saving the form does not drop them.
+  const staleIds = linked.flatMap((field) => {
+    if (field.dataType !== "RECORD_LINK") return [];
+    const known = new Set(field.options.map((option) => option.value));
+    const stored = location.values.find((value) => value.fieldId === field.id)?.valueText ?? "";
+    return stored.split("|").filter((id) => id && !known.has(id));
+  });
+  const staleLabels = await recordLabels(staleIds);
+  const fields = linked.map((field) => {
+    if (field.dataType !== "RECORD_LINK") return field;
+    const known = new Set(field.options.map((option) => option.value));
+    const stored = (location.values.find((value) => value.fieldId === field.id)?.valueText ?? "").split("|").filter(Boolean);
+    const extra = stored
+      .filter((id) => !known.has(id))
+      .map((id, index) => ({ ...field.options[0], id: `stale-${id}`, fieldId: field.id, value: id, label: `${staleLabels.get(id) ?? id} (archived)`, parentValues: "", isDefault: false, sortOrder: -1 - index }));
+    return extra.length ? { ...field, options: [...extra, ...field.options] } : field;
   });
   const choiceMeta = await loadFieldChoices(
     fields.map((field) => ({ id: field.id, choiceListId: field.choiceListId, parentFieldId: field.parentFieldId })),
@@ -105,12 +125,15 @@ export default async function StorePage({
       orderBy: { name: "asc" },
     }),
   ]);
+  const [types, inbound] = await Promise.all([listRecordTypes(), linkedFrom(location.id)]);
+  const recordType = types.find((type) => type.id === location.recordTypeId);
+  const visibleInbound = inbound.filter((link) => canSeeValue(access, link.fieldId, link.categoryId));
   const visibleChanges = changes.filter((row) => canSeeValue(access, row.fieldId, row.field.categoryId));
 
   return (
     <div className="space-y-4">
       <h1 className="flex items-center text-2xl font-semibold">
-        Dimension
+        {types.length > 1 && recordType ? recordType.name : "Dimension"}
         <HelpTip text="Edit the values for this record. An attribute's description appears beside it. Attributes you cannot update are read only. When you open this page from an action, the attributes that step requires are highlighted. Changelog lists saved edits for this record." />
       </h1>
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
@@ -146,6 +169,22 @@ export default async function StorePage({
           </label>
           <button className="btn" type="submit">Start</button>
         </form>
+      ) : null}
+      {visibleInbound.length ? (
+        <section className="space-y-2">
+          <h2 className="flex items-center text-lg font-semibold">
+            Linked from
+            <HelpTip text="Other records whose link attributes point to this record." />
+          </h2>
+          <ul className="panel divide-y text-sm">
+            {visibleInbound.map((link) => (
+              <li key={`${link.locationId}-${link.fieldId}`} className="flex flex-wrap justify-between gap-2 px-4 py-2">
+                <a className="font-semibold text-pine" href={`/dimensions/${link.locationId}`}>{link.label}</a>
+                <span className="text-muted">{link.recordType} · {link.attribute}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
       <section className="space-y-2">
         <h2 className="flex items-center text-lg font-semibold">

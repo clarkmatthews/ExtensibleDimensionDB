@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { recordLabels, withLinkOptions } from "@/lib/record-types";
 import { storedToDisplay, type DefinedField } from "@/lib/values";
 
 export type StoreNode = {
@@ -10,19 +11,22 @@ export type StoreNode = {
 };
 
 export async function buildStoreTargets(fieldId: string): Promise<StoreNode[]> {
-  const [field, labelFields, locations] = await Promise.all([
-    prisma.fieldDefinition.findUnique({ where: { id: fieldId }, include: { options: true } }),
+  const loaded = await prisma.fieldDefinition.findUnique({ where: { id: fieldId }, include: { options: true, category: true } });
+  if (!loaded) return [];
+  const recordTypeId = loaded.category.recordTypeId;
+  const [[field], labelFields, locations] = await Promise.all([
+    withLinkOptions([loaded]),
     prisma.fieldDefinition.findMany({
-      where: { key: { in: ["name", "state", "city"] } },
+      where: { key: { in: ["name", "state", "city"] }, category: { recordTypeId } },
       include: { options: true },
     }),
     prisma.location.findMany({
-      where: { isActive: true },
+      where: { isActive: true, recordTypeId },
       include: { values: true },
       orderBy: { createdAt: "asc" },
     }),
   ]);
-  if (!field) return [];
+  const labels = await recordLabels(locations.map((location) => location.id));
   const byKey = new Map(labelFields.map((item) => [item.key, item]));
   const nameField = byKey.get("name");
   const stateField = byKey.get("state");
@@ -37,7 +41,7 @@ export async function buildStoreTargets(fieldId: string): Promise<StoreNode[]> {
   for (const location of locations) {
     const state = textOf(location.values, stateField) || "No state";
     const city = textOf(location.values, cityField) || "No city";
-    const name = textOf(location.values, nameField) || "Untitled dimension";
+    const name = textOf(location.values, nameField) || labels.get(location.id) || "Untitled dimension";
     const current = storedToDisplay(field, location.values.find((value) => value.fieldId === field.id));
     const cities = grouped.get(state) ?? new Map<string, StoreNode[]>();
     const stores = cities.get(city) ?? [];

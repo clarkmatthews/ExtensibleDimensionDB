@@ -67,6 +67,15 @@ describe("import cell conversion", () => {
     expect(normalizeCell(field({ dataType: "DROPDOWN" }), "Texas", choices)).toBe("Texas");
   });
 
+  it("maps linked records by their identifier to record ids", () => {
+    const vendors = [
+      { label: "ACME-01", value: "rec_acme" },
+      { label: "BOLT-07", value: "rec_bolt" },
+    ];
+    expect(normalizeCell(field({ dataType: "RECORD_LINK" }), "acme-01", vendors)).toBe("rec_acme");
+    expect(normalizeCell(field({ dataType: "RECORD_LINK", multiple: true }), "ACME-01, BOLT-07", vendors)).toBe("rec_acme|rec_bolt");
+  });
+
   it("matches headers by key or display name and flags the rest", () => {
     const fields = [
       field({ id: "a", key: "store_code", friendlyName: "Store code", isStoreKey: true }),

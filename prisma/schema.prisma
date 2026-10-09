@@ -22,6 +22,7 @@ enum DataType {
   EMAIL
   PHONE
   COORDINATE
+  RECORD_LINK
 }
 
 enum ChoiceSource {
@@ -194,8 +195,24 @@ model UserGroup {
   @@id([userId, groupId])
 }
 
+/// A kind of record, such as Location, Vendor, or Product. Each type has its own dimensions,
+/// attributes, unique identifier, and records.
+model RecordType {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String            @default("")
+  sortOrder   Int               @default(0)
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  categories  Category[]
+  records     Location[]
+  linkFields  FieldDefinition[] @relation("LinkTarget")
+}
+
 model Category {
   id          String   @id @default(cuid())
+  recordTypeId String
+  recordType  RecordType @relation(fields: [recordTypeId], references: [id])
   name        String
   description String   @default("")
   sortOrder   Int      @default(0)
@@ -215,6 +232,9 @@ model FieldDefinition {
   dataType          DataType
   categoryId        String
   category          Category  @relation(fields: [categoryId], references: [id])
+  /// For RECORD_LINK attributes: the record type the link points to.
+  linkTypeId        String?
+  linkType          RecordType? @relation("LinkTarget", fields: [linkTypeId], references: [id])
   sortOrder         Int       @default(0)
   isActive          Boolean   @default(true)
   isRequired        Boolean   @default(false)
@@ -293,6 +313,8 @@ model FieldOption {
 
 model Location {
   id        String         @id @default(cuid())
+  recordTypeId String
+  recordType RecordType    @relation(fields: [recordTypeId], references: [id])
   /// False when the record is archived. Archived records are hidden from the grid, exports,
   /// the share API, and AI knowledge, and cannot be edited until they are restored.
   isActive  Boolean        @default(true)
@@ -612,6 +634,7 @@ model ImportJob {
   userId     String
   fileName   String
   csv        String
+  recordTypeId String  @default("")
   status     String    @default("PREVIEWED")
   summary    Json?
   createdAt  DateTime  @default(now())

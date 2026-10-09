@@ -43,20 +43,21 @@ async function main() {
     "search_records",
     {
       title: "Search records",
-      description: "Find records by subject label, attribute display name, or display value. Returns knowledge cards and record ids. Optional dimension and attribute narrow the match.",
+      description: "Find records by subject label, attribute display name, or display value. Returns knowledge cards and record ids. Optional record type, dimension, and attribute narrow the match.",
       inputSchema: {
         query: z.string().describe("Text to match."),
+        type: z.string().optional().describe("Record type name, such as Location or Vendor."),
         dimension: z.string().optional().describe("Dimension name."),
         attribute: z.string().optional().describe("Attribute key or display name."),
       },
     },
-    async ({ query, dimension, attribute }) => text(await searchRecords(access, { query, dimension, attribute })),
+    async ({ query, type, dimension, attribute }) => text(await searchRecords(access, { query, type, dimension, attribute })),
   );
   server.registerTool(
     "get_record",
     {
       title: "Get record",
-      description: "Return one record as a knowledge card grouped by dimension. Only attributes this user can view are included.",
+      description: "Return one record as a knowledge card grouped by dimension, followed by the records that link to it. Only attributes this user can view are included.",
       inputSchema: {
         id: z.string().describe("Record id."),
       },

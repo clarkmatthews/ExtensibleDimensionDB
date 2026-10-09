@@ -35,6 +35,7 @@ export function StoreGrid({
   options,
   blanks,
   activeFieldId,
+  recordTypeId,
 }: {
   fields: { id: string; friendlyName: string; category: string }[];
   rows: GridRow[];
@@ -45,6 +46,7 @@ export function StoreGrid({
   options: Record<string, string[]>;
   blanks: Record<string, boolean>;
   activeFieldId: string;
+  recordTypeId?: string;
 }) {
   const router = useRouter();
   const [visibility, setVisibility] = useState<VisibilityState>({});
@@ -126,10 +128,10 @@ export function StoreGrid({
         else next[field.id] = { text, value };
       }
       sentTexts.current = pushed;
-      router.push(dimensionHref(query, next, 1), { scroll: false });
+      router.push(dimensionHref(query, next, 1, recordTypeId), { scroll: false });
     }, 300);
     return () => clearTimeout(handle);
-  }, [texts, filters, fields, query, router]);
+  }, [texts, filters, fields, query, router, recordTypeId]);
 
   function chooseValue(fieldId: string, value: string) {
     const chosen = value === "" && fieldId === activeFieldId ? ALL_FILTER : value;
@@ -143,16 +145,17 @@ export function StoreGrid({
       else next[field.id] = { text, value: selected };
     }
     sentTexts.current = pushed;
-    router.push(dimensionHref(query, next, 1), { scroll: false });
+    router.push(dimensionHref(query, next, 1, recordTypeId), { scroll: false });
   }
 
-  const exportQuery = dimensionSearchParams(query, filters);
+  const exportQuery = dimensionSearchParams(query, filters, undefined, recordTypeId);
 
   return (
     <div className="space-y-4">
       <form className="flex flex-wrap gap-2" action="/dimensions">
         <input className="field max-w-sm" name="q" defaultValue={query} placeholder="Search dimension values" />
         <input type="hidden" name="page" value="1" />
+        {recordTypeId ? <input type="hidden" name="type" value={recordTypeId} /> : null}
         {Object.entries(filters).map(([id, filter]) => (
           <span key={id}>
             {filter.value ? <input type="hidden" name={`v_${id}`} value={filter.value} /> : null}
@@ -261,9 +264,9 @@ export function StoreGrid({
         </table>
       </div>
       <div className="flex gap-2 text-sm">
-        {page > 1 ? <a className="btn-quiet" href={dimensionHref(query, filters, page - 1)}>Previous</a> : null}
+        {page > 1 ? <a className="btn-quiet" href={dimensionHref(query, filters, page - 1, recordTypeId)}>Previous</a> : null}
         <span className="self-center text-muted">Page {page} of {pageCount}</span>
-        {page < pageCount ? <a className="btn-quiet" href={dimensionHref(query, filters, page + 1)}>Next</a> : null}
+        {page < pageCount ? <a className="btn-quiet" href={dimensionHref(query, filters, page + 1, recordTypeId)}>Next</a> : null}
       </div>
     </div>
   );

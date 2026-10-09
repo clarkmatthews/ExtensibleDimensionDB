@@ -31,6 +31,7 @@ export type FieldDraft = {
   isCreatedDate: boolean;
   choiceSource: "MANUAL" | "US_STATE" | "US_CITY";
   choiceListId: string;
+  linkTypeId: string;
   parentFieldId: string;
   defaultValue: string;
   formatExample: string;
@@ -62,6 +63,7 @@ const empty = (): FieldDraft => ({
   isCreatedDate: false,
   choiceSource: "MANUAL",
   choiceListId: "",
+  linkTypeId: "",
   parentFieldId: "",
   defaultValue: "",
   formatExample: "",
@@ -90,12 +92,14 @@ export function FieldForm({
   lists = [],
   catalogs = [],
   canManageLists = false,
+  recordTypes = [],
 }: {
   categoryId: string;
   initial?: FieldDraft;
   lists?: ListPeer[];
   catalogs?: FieldListChoice[];
   canManageLists?: boolean;
+  recordTypes?: { id: string; name: string }[];
 }) {
   const [draft, setDraft] = useState<FieldDraft>(initial ?? empty());
   const [error, setError] = useState("");
@@ -178,7 +182,7 @@ export function FieldForm({
             <span className="mt-1 block text-xs text-muted">Shown as help beside the attribute in the dimension editor.</span>
           </label>
           <label>
-            <span className="label">Type <HelpTip text="What the attribute accepts: text, a long note, a number, a date or time, a checkbox, a radio list, or a dropdown list." /></span>
+            <span className="label">Type <HelpTip text="What the attribute accepts: text, a long note, a number, a date or time, a checkbox, a radio list, a dropdown list, or a link to another record." /></span>
             <select
               className="field"
               value={draft.dataType}
@@ -375,6 +379,29 @@ export function FieldForm({
                   </label>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+          {draft.dataType === "RECORD_LINK" ? (
+            <div className="space-y-2 md:col-span-2">
+              <label>
+                <span className="label">
+                  Links to <HelpTip text="The record type this attribute points to. On a record, people choose from the active records of that type, by their unique identifier. The linked record lists this one under Linked from." />
+                </span>
+                <select className="field" name="linkTypeId" value={draft.linkTypeId} onChange={(event) => patch({ linkTypeId: event.target.value })} required>
+                  <option value="">Choose a record type</option>
+                  {recordTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+                </select>
+              </label>
+              <div className="flex flex-wrap gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={draft.multiple} onChange={(event) => patch({ multiple: event.target.checked })} />
+                  Several records
+                </label>
+                <label className="flex items-center gap-2">
+                  Visible rows
+                  <input className="field w-20" value={draft.numVisible} onChange={(event) => patch({ numVisible: event.target.value })} />
+                </label>
+              </div>
             </div>
           ) : null}
           <div className="md:col-span-2">

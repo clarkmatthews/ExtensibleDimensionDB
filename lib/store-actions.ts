@@ -6,6 +6,7 @@ import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, loadAccess } from "@/lib/permissions";
 import { identifierTaken, loadSaveContext, saveRecord, type LoadedField } from "@/lib/record-save";
+import { resolveRecordType } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { enqueueRecordEvent } from "@/lib/webhooks";
 import { runWorkflows, startManualProcess } from "@/lib/workflow";
@@ -20,12 +21,17 @@ export async function saveStore(formData: FormData) {
   const { user, access } = await actor();
   if (!canEditModule(access, "STORES")) return { error: "You cannot change dimensions." };
   const locationId = String(formData.get("locationId") ?? "");
+  // An existing record keeps its type; a new one takes the type it was created from.
+  const recordTypeId = locationId
+    ? (await prisma.location.findUnique({ where: { id: locationId }, select: { recordTypeId: true } }))?.recordTypeId
+    : (await resolveRecordType(String(formData.get("recordTypeId") ?? ""))).current?.id;
+  if (!recordTypeId) return { error: locationId ? "This record no longer exists." : "Choose a record type." };
   const submitted = (field: LoadedField) => {
     const values = formData.getAll(`field:${field.id}`).map(String);
     return field.multiple ? values.filter(Boolean).join("|") : (values[0] ?? "");
   };
   const result = await saveRecord({
-    ctx: await loadSaveContext(),
+    ctx: await loadSaveContext(recordTypeId),
     access,
     userId: user.id,
     locationId,
@@ -118,7 +124,10 @@ export async function restoreRecord(formData: FormData) {
     const location = await prisma.location.findUnique({ where: { id: locationId }, include: { values: true } });
     if (!location) redirect("/dimensions/archived");
     // A record archived long ago may share its identifier with one created since.
-    const keyFields = await prisma.fieldDefinition.findMany({ where: { isStoreKey: true }, select: { id: true, friendlyName: true } });
+    const keyFields = await prisma.fieldDefinition.findMany({
+      where: { isStoreKey: true, category: { recordTypeId: location.recordTypeId } },
+      select: { id: true, friendlyName: true },
+    });
     for (const field of keyFields) {
       const value = location.values.find((row) => row.fieldId === field.id)?.valueText?.trim();
       if (value && (await identifierTaken(prisma, field.id, value, locationId))) {

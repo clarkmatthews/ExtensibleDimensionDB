@@ -20,7 +20,10 @@ export default async function ArchivedRecordsPage() {
     where: { isActive: false },
     orderBy: { archivedAt: "desc" },
     take: 500,
-    include: { values: { where: { field: { isStoreKey: true } }, select: { valueText: true } } },
+    include: {
+      values: { where: { field: { isStoreKey: true } }, select: { valueText: true } },
+      recordType: { select: { name: true } },
+    },
   });
   const archiverIds = [...new Set(records.map((record) => record.archivedById).filter((id): id is string => Boolean(id)))];
   const archivers = new Map(
@@ -46,7 +49,7 @@ export default async function ArchivedRecordsPage() {
                   {record.values[0]?.valueText || record.id}
                 </Link>
                 <p className="text-xs text-muted">
-                  Archived {record.archivedAt?.toLocaleString() ?? "earlier"}
+                  {record.recordType.name} · Archived {record.archivedAt?.toLocaleString() ?? "earlier"}
                   {record.archivedById && archivers.get(record.archivedById) ? ` by ${archivers.get(record.archivedById)}` : ""}
                 </p>
               </div>

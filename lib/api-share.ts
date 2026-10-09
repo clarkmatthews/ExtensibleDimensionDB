@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "crypto";
 import type { NextRequest } from "next/server";
 import { clientAddress, UNKNOWN_CLIENT } from "@/lib/client-address";
 import { prisma } from "@/lib/prisma";
+import { withLinkOptions } from "@/lib/record-types";
 import { storedToDisplay, type DefinedField } from "@/lib/values";
 
 /** Holds a newly issued secret for two minutes so API Config can show it once. */
@@ -19,12 +20,14 @@ export type ShareField = {
   uniqueIdentifier: boolean;
   formatExample: string;
   validationPattern: string;
+  recordType: string;
   choices?: ShareChoice[];
+  linksTo?: string;
 };
 
 export type SharePayload = {
   fields: ShareField[];
-  dimensions: { id: string; values: Record<string, string> }[];
+  dimensions: { id: string; recordType: string; values: Record<string, string> }[];
 };
 
 export function bearerSecret(request: NextRequest) {
@@ -77,20 +80,24 @@ export async function fieldsForEndpoint(endpointId: string) {
     prisma.apiEndpointField.findMany({ where: { endpointId } }),
     prisma.fieldDefinition.findMany({
       where: { category: { isActive: true } },
-      include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
+      include: { options: { orderBy: { sortOrder: "asc" } }, category: { include: { recordType: true } }, linkType: true },
       orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
     }),
   ]);
   const pickedIds = new Set(picked.map((row) => row.fieldId));
   const wholeCategories = new Set(scopes.filter((row) => !row.applyToFields).map((row) => row.categoryId));
   const specificCategories = new Set(scopes.filter((row) => row.applyToFields).map((row) => row.categoryId));
-  return definitions.filter((field) => {
-    if (wholeCategories.has(field.categoryId)) return field.isActive;
-    return specificCategories.has(field.categoryId) && pickedIds.has(field.id);
-  });
+  return withLinkOptions(
+    definitions.filter((field) => {
+      if (wholeCategories.has(field.categoryId)) return field.isActive;
+      return specificCategories.has(field.categoryId) && pickedIds.has(field.id);
+    }),
+  );
 }
 
-export function shareField(field: DefinedField & { category: { name: string } }): ShareField {
+export function shareField(
+  field: DefinedField & { category: { name: string; recordType: { name: string } }; linkType?: { name: string } | null },
+): ShareField {
   const result: ShareField = {
     key: field.key,
     name: field.friendlyName,
@@ -101,8 +108,12 @@ export function shareField(field: DefinedField & { category: { name: string } })
     uniqueIdentifier: field.isStoreKey,
     formatExample: field.formatExample,
     validationPattern: field.validationPattern,
+    recordType: field.category.recordType.name,
   };
-  if (field.options.length) {
+  if (field.dataType === "RECORD_LINK") {
+    // Values are the linked records' labels; the full list of possible records is not published.
+    if (field.linkType) result.linksTo = field.linkType.name;
+  } else if (field.options.length) {
     result.choices = field.options.map((option) => ({ label: option.label, value: option.value }));
   }
   return result;
@@ -110,27 +121,32 @@ export function shareField(field: DefinedField & { category: { name: string } })
 
 export async function buildShare(endpointId: string): Promise<SharePayload> {
   const fields = await fieldsForEndpoint(endpointId);
+  // Only records of the types the shared attributes belong to.
+  const typeIds = [...new Set(fields.map((field) => field.category.recordTypeId))];
   const activeFields = await prisma.fieldDefinition.findMany({
-    where: { isActiveFilter: true, dataType: "CHECKBOX" },
-    select: { id: true },
+    where: { isActiveFilter: true, dataType: "CHECKBOX", category: { recordTypeId: { in: typeIds } } },
+    select: { id: true, category: { select: { recordTypeId: true } } },
   });
-  const activeIds = new Set(activeFields.map((field) => field.id));
-  const locations = await prisma.location.findMany({
-    where: { isActive: true },
-    include: { values: true },
-    orderBy: { createdAt: "desc" },
+  // Each record type has its own optional "active" checkbox; records of a type without one are all shared.
+  const activeByType = new Map(activeFields.map((field) => [field.category.recordTypeId, field.id]));
+  const locations = typeIds.length
+    ? await prisma.location.findMany({
+        where: { isActive: true, recordTypeId: { in: typeIds } },
+        include: { values: true, recordType: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const openLocations = locations.filter((location) => {
+    const activeId = activeByType.get(location.recordTypeId);
+    return !activeId || location.values.some((value) => value.fieldId === activeId && value.valueBoolean === true);
   });
-  const openLocations = activeIds.size
-    ? locations.filter((location) =>
-        location.values.some((value) => activeIds.has(value.fieldId) && value.valueBoolean === true),
-      )
-    : locations;
   return {
     fields: fields.map(shareField),
     dimensions: openLocations.map((location) => ({
       id: location.id,
+      recordType: location.recordType.name,
       values: Object.fromEntries(
-        fields.map((field) => {
+        fields.filter((field) => field.category.recordTypeId === location.recordTypeId).map((field) => {
           const stored = location.values.find((value) => value.fieldId === field.id);
           return [field.key, storedToDisplay(field, stored)];
         }),
@@ -155,7 +171,7 @@ export function shareToXml(payload: SharePayload) {
         .map((choice) => `        <choice label="${xmlEscape(choice.label)}" value="${xmlEscape(choice.value)}" />`)
         .join("\n");
       return [
-        `    <field key="${xmlEscape(field.key)}" name="${xmlEscape(field.name)}" category="${xmlEscape(field.category)}" dataType="${xmlEscape(field.dataType)}" required="${field.required}" uniqueIdentifier="${field.uniqueIdentifier}">`,
+        `    <field key="${xmlEscape(field.key)}" name="${xmlEscape(field.name)}" category="${xmlEscape(field.category)}" recordType="${xmlEscape(field.recordType)}" dataType="${xmlEscape(field.dataType)}" required="${field.required}" uniqueIdentifier="${field.uniqueIdentifier}"${field.linksTo ? ` linksTo="${xmlEscape(field.linksTo)}"` : ""}>`,
         `      <description>${xmlEscape(field.description)}</description>`,
         `      <formatExample>${xmlEscape(field.formatExample)}</formatExample>`,
         `      <validationPattern>${xmlEscape(field.validationPattern)}</validationPattern>`,
@@ -169,7 +185,7 @@ export function shareToXml(payload: SharePayload) {
       const values = Object.entries(dimension.values)
         .map(([key, value]) => `      <value key="${xmlEscape(key)}">${xmlEscape(value)}</value>`)
         .join("\n");
-      return `    <dimension id="${xmlEscape(dimension.id)}">\n${values}\n    </dimension>`;
+      return `    <dimension id="${xmlEscape(dimension.id)}" recordType="${xmlEscape(dimension.recordType)}">\n${values}\n    </dimension>`;
     })
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<share>\n  <fields>\n${fields}\n  </fields>\n  <dimensions>\n${dimensions}\n  </dimensions>\n</share>\n`;
