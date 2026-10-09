@@ -18,6 +18,7 @@ const AREAS: { prefix: string; label: string }[] = [
   { prefix: "webhooks.", label: "Webhooks" },
   { prefix: "import.", label: "Import" },
   { prefix: "ai.", label: "AI access" },
+  { prefix: "sso.", label: "Single sign-on" },
   { prefix: "proposals.", label: "AI proposals" },
   { prefix: "session.", label: "Sign-in sessions" },
 ];

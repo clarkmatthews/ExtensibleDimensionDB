@@ -144,6 +144,8 @@ Every saved attribute change is recorded with the old value, the new value, the 
 
 **Webhooks** send a signed JSON message to another system when records are created, updated, archived, or restored, optionally limited to certain dimensions. Each request carries an `X-Dimension-Signature` header (`t=<unix time>,v1=<HMAC-SHA256 of "t.body">`) so the receiver can verify it. Failed deliveries are retried for about a day, and each webhook shows its recent deliveries with a manual retry and a **Send test** button. For safety, webhooks only reach public `https://` addresses; set `WEBHOOK_ALLOW_PRIVATE=true` to allow local or internal targets.
 
+**Single sign-on** connects any OpenID Connect provider: Microsoft Entra ID, Google Workspace, Okta, Auth0, Keycloak, and others. Enter the issuer, client ID, and client secret, register the redirect URI the page shows, and a **Sign in with SSO** button appears on the sign-in page. People sign in to their existing account by verified email, and the provider's identity is linked on first use. Optionally, accounts are created on first sign-in for allowed email domains and added to a group, and password sign-in can be limited to administrators. Set `APP_URL` to the app's public address in production.
+
 **Audit log** lists every successful administrative change: data definitions, lists, users, groups, permissions, workflows, API endpoints, email and site settings, sign-ins, and sign-out-everywhere. Each entry shows who made it, when, and the submitted values. Passwords and secrets are never recorded. Grant access to it like any other screen on Permissions.
 
 ## Security
@@ -169,7 +171,9 @@ For a one-off handoff without MCP, use **Export MD** on the dimension grid.
 - Next.js 16 (App Router) and React 19
 - TypeScript and Tailwind CSS 4
 - PostgreSQL with Prisma 6
-- Signed httpOnly session cookie
+- Server-side sessions behind a signed httpOnly cookie
+- OpenID Connect single sign-on with openid-client
+- Model Context Protocol server (stdio and Streamable HTTP)
 - Nodemailer for optional SMTP delivery
 
 ## Run with Docker
