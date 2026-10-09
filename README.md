@@ -279,7 +279,3 @@ Settings are read from `.env`. Only `DATABASE_URL` and `AUTH_SECRET` are require
 - Model Context Protocol server (stdio and Streamable HTTP)
 - Nodemailer for optional SMTP delivery
 - Vitest for tests
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
