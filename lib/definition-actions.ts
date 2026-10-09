@@ -243,7 +243,8 @@ export async function saveField(formData: FormData) {
       return { error: "A list attribute needs a list with at least one active item." };
     }
 
-    const maxLength = optionalNumber(formData, "maxLength");
+    // Only text attributes have a length limit; the attribute form posts its default for every type.
+    const maxLength = dataType === "TEXT" || dataType === "BIG_TEXT" ? optionalNumber(formData, "maxLength") : null;
     if (dataType === "TEXT" && (maxLength == null || maxLength < 1 || maxLength > 512)) {
       return { error: "Text max length is required and must be from 1 to 512." };
     }

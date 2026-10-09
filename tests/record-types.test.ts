@@ -41,6 +41,12 @@ describe("record links", () => {
     expect(await validateValue({ ...linkRules, multiple: true }, "rec_acme|rec_gone")).toMatch(/active record/);
   });
 
+  it("links several records even when the attribute carries a length limit", async () => {
+    const ids = Array.from({ length: 5 }, (_, index) => `cmv1i8wxf000pvl7daeyw${index}xyz`);
+    const rules = { ...linkRules, multiple: true, maxLength: 50, options: ids.map((id) => ({ label: id, value: id })) };
+    expect(await validateValue(rules, ids.join("|"))).toBeNull();
+  });
+
   it("displays the linked records' labels, not their ids", () => {
     const field = {
       id: "f",
