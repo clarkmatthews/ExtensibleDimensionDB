@@ -62,6 +62,7 @@ enum AppModule {
   IMPORT
   AI_ACCESS
   PROPOSALS
+  SSO
 }
 
 enum ApiFormat {
@@ -143,6 +144,8 @@ model User {
   email              String         @unique
   name               String
   passwordHash       String
+  /// The identity provider's subject for this person, set on their first single sign-on.
+  oidcSubject        String?        @unique
   isActive           Boolean        @default(true)
   isAdmin            Boolean        @default(false)
   canDefineWorkflows Boolean        @default(false)
@@ -701,6 +704,26 @@ model JobRun {
   name       String   @id
   lastRunAt  DateTime
   lastResult String   @default("")
+}
+
+/// Single sign-on with an OpenID Connect provider (Microsoft Entra ID, Google, Okta, Auth0, and others).
+model SsoSettings {
+  id                String   @id @default("default")
+  enabled           Boolean  @default(false)
+  issuer            String   @default("")
+  clientId          String   @default("")
+  /// Encrypted with AUTH_SECRET.
+  clientSecret      String   @default("")
+  buttonLabel       String   @default("Sign in with SSO")
+  /// Email domains allowed to sign in, such as example.com. Empty allows any verified email.
+  allowedDomains    String[]
+  /// Create an account on first sign-in for an allowed email that has none.
+  createUsers       Boolean  @default(false)
+  /// Group new accounts join, which decides what they can see.
+  defaultGroupId    String?
+  /// When on, only administrators can still sign in with a password.
+  passwordAdminOnly Boolean  @default(false)
+  updatedAt         DateTime @updatedAt
 }
 
 model SiteSettings {

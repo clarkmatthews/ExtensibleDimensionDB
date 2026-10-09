@@ -141,7 +141,7 @@ export default async function UserPage({
             {activeSessions.map((session) => (
               <li key={session.id}>
                 <span className="text-muted">Last active {session.lastSeenAt.toLocaleString()}</span>
-                {session.userAgent ? <span className="block truncate text-xs text-muted">{session.userAgent}</span> : null}
+                {session.userAgent ? <span className="block truncate text-xs text-muted" title={session.userAgent}>{describeAgent(session.userAgent)}</span> : null}
               </li>
             ))}
           </ul>
@@ -253,4 +253,29 @@ function Check({ name, label, checked }: { name: string; label: string; checked?
       {label}
     </label>
   );
+}
+
+/** A short description of a browser, such as "Chrome on macOS", from its user agent. */
+function describeAgent(agent: string) {
+  const browser = /Edg\//.test(agent)
+    ? "Edge"
+    : /Firefox\//.test(agent)
+      ? "Firefox"
+      : /Chrome\//.test(agent)
+        ? "Chrome"
+        : /Safari\//.test(agent)
+          ? "Safari"
+          : "Browser";
+  const system = /iPhone|iPad/.test(agent)
+    ? "iOS"
+    : /Android/.test(agent)
+      ? "Android"
+      : /Mac OS X/.test(agent)
+        ? "macOS"
+        : /Windows/.test(agent)
+          ? "Windows"
+          : /Linux/.test(agent)
+            ? "Linux"
+            : "";
+  return system ? `${browser} on ${system}` : browser;
 }

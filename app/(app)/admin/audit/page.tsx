@@ -18,6 +18,7 @@ const AREAS: { prefix: string; label: string }[] = [
   { prefix: "webhooks.", label: "Webhooks" },
   { prefix: "import.", label: "Import" },
   { prefix: "ai.", label: "AI access" },
+  { prefix: "sso.", label: "Single sign-on" },
   { prefix: "proposals.", label: "AI proposals" },
   { prefix: "session.", label: "Sign-in sessions" },
 ];
@@ -25,7 +26,10 @@ const AREAS: { prefix: string; label: string }[] = [
 /** Turns "access.saveUser" into "Save user". */
 function actionLabel(action: string) {
   const name = action.split(".").slice(1).join(".") || action;
-  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  const words = name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/\b(sso|api|ai)\b/g, (word) => word.toUpperCase());
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

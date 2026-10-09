@@ -4,9 +4,13 @@ import { readSessionToken, SESSION_COOKIE } from "@/lib/session-token";
 export function proxy(request: NextRequest) {
   const userId = readSessionToken(request.cookies.get(SESSION_COOKIE)?.value);
   const path = request.nextUrl.pathname;
-  // These routes authenticate themselves: share secrets, the alert secret, and AI access tokens.
+  // These routes authenticate themselves: share secrets, the alert secret, AI access tokens, and single sign-on.
   const isPublic =
-    path.startsWith("/login") || path.startsWith("/api/alerts") || path.startsWith("/api/share") || path === "/api/mcp";
+    path.startsWith("/login") ||
+    path.startsWith("/api/alerts") ||
+    path.startsWith("/api/share") ||
+    path.startsWith("/api/auth/oidc/") ||
+    path === "/api/mcp";
   if (!userId && !isPublic) {
     return NextResponse.redirect(new URL("/login", request.url));
   }

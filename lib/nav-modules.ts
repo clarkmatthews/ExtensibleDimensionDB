@@ -14,6 +14,7 @@ export const NAV_MODULES = [
   { id: "SITE_CONFIG", label: "Site", href: "/admin/site", group: "Settings" },
   { id: "API_CONFIG", label: "API Config", href: "/admin/api", group: "Settings" },
   { id: "EMAIL_CONFIG", label: "Email Config", href: "/admin/email", group: "Settings" },
+  { id: "SSO", label: "Single sign-on", href: "/admin/sso", group: "Settings" },
   { id: "AI_ACCESS", label: "AI access", href: "/ai-access", group: "Settings" },
   { id: "WEBHOOKS", label: "Webhooks", href: "/admin/webhooks", group: "Settings" },
   { id: "AUDIT", label: "Audit log", href: "/admin/audit", group: "Settings" },

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { clientAddress } from "@/lib/client-address";
 import { clearLoginFailures, loginBlockedUntil, noteLoginFailure } from "@/lib/login-throttle";
 import { writeAudit } from "@/lib/audit";
+import { loadSsoSettings } from "@/lib/sso";
 import { prisma } from "@/lib/prisma";
 import { clearSession, setSession } from "@/lib/session";
 
@@ -33,6 +34,8 @@ export async function login(formData: FormData) {
     redirect(locked ? lockedUrl(locked) : "/login?error=1");
   }
   await clearLoginFailures(email, address);
+  const sso = await loadSsoSettings().catch(() => null);
+  if (sso?.enabled && sso.passwordAdminOnly && !user.isAdmin) redirect("/login?error=sso-only");
   await setSession(user.id);
   await writeAudit("session.signIn", { address }, user.id);
   redirect("/dashboard");

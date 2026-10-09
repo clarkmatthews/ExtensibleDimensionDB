@@ -1,14 +1,16 @@
 import { login } from "@/app/login/actions";
 import { HelpTip } from "@/components/help-tip";
 import { siteName } from "@/lib/site";
+import { ssoButton, SSO_MESSAGES, type SsoReason } from "@/lib/sso";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; wait?: string }>;
+  searchParams: Promise<{ error?: string; wait?: string; reason?: string }>;
 }) {
   const params = await searchParams;
   const name = await siteName();
+  const sso = await ssoButton();
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <form action={login} className="panel w-full max-w-md p-8">
@@ -28,6 +30,14 @@ export default async function LoginPage({
             Too many sign-in attempts. Try again in {waitText(params.wait)}.
           </p>
         ) : null}
+        {params.error === "sso" ? (
+          <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-danger">
+            Single sign-on did not complete. {SSO_MESSAGES[params.reason as SsoReason] ?? ""}
+          </p>
+        ) : null}
+        {params.error === "sso-only" ? (
+          <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-danger">This account signs in with single sign-on. Use the button below.</p>
+        ) : null}
         {params.error === "setup" ? (
           <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-danger">
             <p>The database is connected, but the tables have not been created. This account is not allowed to create them.</p>
@@ -46,6 +56,12 @@ export default async function LoginPage({
         <button className="btn mt-6 w-full" type="submit">
           Sign in
         </button>
+        {sso ? (
+          <>
+            <p className="mt-4 text-center text-xs text-muted">or</p>
+            <a className="btn-quiet mt-2 w-full justify-center py-2 font-semibold" href="/api/auth/oidc/start">{sso.label}</a>
+          </>
+        ) : null}
       </form>
     </div>
   );
