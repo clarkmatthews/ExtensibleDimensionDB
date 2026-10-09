@@ -77,8 +77,10 @@ export function dimensionSearchParams(
   query: string,
   filters: Record<string, ColumnFilter>,
   page?: number,
+  recordTypeId?: string,
 ) {
   const params = new URLSearchParams();
+  if (recordTypeId) params.set("type", recordTypeId);
   if (query) params.set("q", query);
   if (page && page > 1) params.set("page", String(page));
   for (const id of Object.keys(filters).sort()) {
@@ -89,8 +91,8 @@ export function dimensionSearchParams(
   return params.toString();
 }
 
-export function dimensionHref(query: string, filters: Record<string, ColumnFilter>, page = 1) {
-  const search = dimensionSearchParams(query, filters, page);
+export function dimensionHref(query: string, filters: Record<string, ColumnFilter>, page = 1, recordTypeId?: string) {
+  const search = dimensionSearchParams(query, filters, page, recordTypeId);
   return search ? `/dimensions?${search}` : "/dimensions";
 }
 

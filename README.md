@@ -16,6 +16,7 @@ The name in the header, on the sign-in page, and in the browser title is a site 
 
 ## What you can define
 
+- **Record types** are the kinds of records you keep: locations, vendors, products, or anything else. Each type has its own dimensions, attributes, unique identifier, and records, and its own tab on the Dimension page. A database starts with one type, Location.
 - **Dimensions** group attributes. A record is one row that can hold values from every dimension the person is allowed to see.
 - **Attributes** are the fields on a record. Each attribute has a key, a display name, a description, a type, and optional rules: required, maximum length, a regular expression, a default, a unique identifier, an active-filter checkbox, or an automatic created date.
 - **Lists** supply choices. A list can follow another list, so cities can follow states, and new parent-child catalogs can be added the same way.
@@ -66,13 +67,15 @@ The action report reviews actions and the history of what was done on them. Filt
 
 ## Data definition
 
+**Record types** are managed at the top of the page: add a type, rename it, or hide it. Dimensions are grouped by type, and a new dimension is added to the type you choose. Dimension names are unique across types.
+
 Each dimension starts collapsed. Open it to rename it, reorder attributes, hide or delete them, and add a new attribute. Deleting an attribute that already has values asks for confirmation. Confirming with **Yes, Delete** removes the correlated values so nothing is left dangling. The dimension records themselves stay.
 
 ![Collapsed dimensions](docs/screenshots/data-definition.png)
 
 ![A dimension opened](docs/screenshots/data-definition-open.png)
 
-Attribute types include text, big text, numeric, date, time, date and time, checkbox, radio, list, zip code, address, email, phone, and coordinate. Validation is a regular expression. An empty pattern adds no extra check.
+Attribute types include text, big text, numeric, date, time, date and time, checkbox, radio, list, zip code, address, email, phone, coordinate, and **link to record**. A link points to one or several records of a chosen record type, such as a location's vendors. On a record, people choose the linked records by their unique identifier, and the linked record lists every record that points to it under **Linked from**. Validation is a regular expression. An empty pattern adds no extra check.
 
 ## Lists
 

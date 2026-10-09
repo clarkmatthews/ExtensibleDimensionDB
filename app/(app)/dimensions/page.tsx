@@ -7,6 +7,7 @@ import { StoreGrid } from "@/components/store-grid";
 import { canEditModule, canViewModule, fieldAccess, loadAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
 import { columnChoices, filterRows, readColumnFilters, withActiveDefault } from "@/lib/column-filters";
+import { resolveRecordType } from "@/lib/record-types";
 import { loadStoreRows, loadVisibleFields } from "@/lib/store-query";
 import { checkboxCheckedText } from "@/lib/values";
 
@@ -25,7 +26,11 @@ export default async function StoresPage({
   const access = await loadAccess(user);
   if (!canViewModule(access, "STORES")) return <ModuleDenied />;
   const moduleEdit = canEditModule(access, "STORES");
-  const fields = await loadVisibleFields(access);
+  const { types, current } = await resolveRecordType(typeof params.type === "string" ? params.type : "");
+  if (!current) {
+    return <p className="text-sm text-muted">No record types are active. An administrator can add one on Data definition.</p>;
+  }
+  const fields = await loadVisibleFields(access, current.id);
   const activeField = fields.find((field) => field.isActiveFilter && field.dataType === "CHECKBOX");
   const activeChecked = activeField ? checkboxCheckedText(activeField) : "";
   const filters = withActiveDefault(
@@ -34,7 +39,7 @@ export default async function StoresPage({
     activeField ? `v_${activeField.id}` in params : true,
     activeChecked,
   );
-  const matched = await loadStoreRows(fields, query);
+  const matched = await loadStoreRows(fields, query, current.id);
   const choices = columnChoices(matched, fields.map((field) => field.id));
   const rows = filterRows(matched, filters);
   const pageSize = 25;
@@ -47,22 +52,37 @@ export default async function StoresPage({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center text-2xl font-semibold">
-            Dimension
+            {types.length > 1 ? current.name : "Dimension"}
             <HelpTip text={`Each row is one dimension. The list shows the attributes you are allowed to view. Search looks through every visible value. Each attribute header has a value list and a Contains box, and those filters apply together.${activeField ? ` ${activeField.friendlyName} starts on ${activeChecked}.` : ""} Export CSV uses the same filters. Export MD downloads every record you can view, including the schema, and ignores the filters.`} />
           </h1>
           <p className="text-sm text-muted">These are the attributes you are allowed to view.</p>
         </div>
         <div className="flex items-center gap-2">
-          {canEditModule(access, "IMPORT") ? <Link className="btn-quiet" href="/dimensions/import">Import</Link> : null}
+          {canEditModule(access, "IMPORT") ? <Link className="btn-quiet" href={`/dimensions/import?type=${current.id}`}>Import</Link> : null}
           <Link className="btn-quiet" href="/dimensions/archived">Archived</Link>
           {canCreate ? (
-            <Link className="btn" href="/dimensions/new">
+            <Link className="btn" href={`/dimensions/new?type=${current.id}`}>
               New Record
             </Link>
           ) : null}
         </div>
       </div>
+      {types.length > 1 ? (
+        <nav className="flex flex-wrap gap-2" aria-label="Record types">
+          {types.map((type) => (
+            <Link
+              key={type.id}
+              href={`/dimensions?type=${type.id}`}
+              className={type.id === current.id ? "btn" : "btn-quiet"}
+              aria-current={type.id === current.id ? "page" : undefined}
+            >
+              {type.name}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
       <StoreGrid
+        recordTypeId={types.length > 1 ? current.id : undefined}
         query={query}
         page={Math.min(page, pageCount)}
         pageCount={pageCount}

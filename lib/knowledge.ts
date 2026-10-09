@@ -2,13 +2,15 @@ import type { FieldDefinition, FieldValue } from "@prisma/client";
 import type { AccessContext, AccessUser } from "@/lib/permissions";
 import { canSeeValue, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { linkedFrom, recordLabels } from "@/lib/record-types";
 import { checkboxCheckedText, displayStored, type DefinedField } from "@/lib/values";
 
 const SEARCH_LIMIT = 25;
 const CHANGE_LIMIT = 200;
 
 type LoadedField = FieldDefinition & {
-  category: { id: string; name: string; description: string; sortOrder: number };
+  category: { id: string; name: string; description: string; sortOrder: number; recordType: { id: string; name: string } };
+  linkType: { id: string; name: string } | null;
   choiceList: { id: string; name: string } | null;
   parentField: { id: string; key: string; friendlyName: string } | null;
 };
@@ -22,9 +24,11 @@ export type SchemaAttribute = {
   uniqueIdentifier: boolean;
   choiceList: string | null;
   follows: string | null;
+  linksTo: string | null;
 };
 
 export type SchemaDimension = {
+  recordType: string;
   name: string;
   description: string;
   attributes: SchemaAttribute[];
@@ -45,13 +49,14 @@ async function visibleFields(ctx: AccessContext) {
   const fields = await prisma.fieldDefinition.findMany({
     where: { isActive: true, category: { isActive: true } },
     include: {
-      category: { select: { id: true, name: true, description: true, sortOrder: true } },
+      category: { select: { id: true, name: true, description: true, sortOrder: true, recordType: { select: { id: true, name: true } } } },
+      linkType: { select: { id: true, name: true } },
       choiceList: { select: { id: true, name: true } },
       parentField: { select: { id: true, key: true, friendlyName: true } },
     },
-    orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+    orderBy: [{ category: { recordType: { sortOrder: "asc" } } }, { category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
   });
-  return fields.filter((field) => canSeeValue(ctx, field.id, field.categoryId));
+  return fields.filter((field) => field.category.recordType && canSeeValue(ctx, field.id, field.categoryId));
 }
 
 export async function schemaCatalog(ctx: AccessContext) {
@@ -60,7 +65,7 @@ export async function schemaCatalog(ctx: AccessContext) {
   for (const field of fields) {
     let dimension = dimensions.find((item) => item.name === field.category.name);
     if (!dimension) {
-      dimension = { name: field.category.name, description: field.category.description, attributes: [] };
+      dimension = { recordType: field.category.recordType.name, name: field.category.name, description: field.category.description, attributes: [] };
       dimensions.push(dimension);
     }
     dimension.attributes.push({
@@ -72,6 +77,7 @@ export async function schemaCatalog(ctx: AccessContext) {
       uniqueIdentifier: field.isStoreKey,
       choiceList: field.choiceList?.name ?? null,
       follows: field.parentField ? `${field.parentField.key} (${field.parentField.friendlyName})` : null,
+      linksTo: field.linkType?.name ?? null,
     });
   }
   return dimensions;
@@ -79,9 +85,15 @@ export async function schemaCatalog(ctx: AccessContext) {
 
 export function schemaText(dimensions: SchemaDimension[]) {
   if (!dimensions.length) return "No visible dimensions.";
+  let recordType = "";
   return dimensions
     .map((dimension) => {
-      const lines = [`Dimension: ${dimension.name}`];
+      const lines: string[] = [];
+      if (dimension.recordType !== recordType) {
+        recordType = dimension.recordType;
+        lines.push(`Record type: ${recordType}`);
+      }
+      lines.push(`Dimension: ${dimension.name}`);
       if (dimension.description) lines.push(dimension.description);
       for (const attribute of dimension.attributes) {
         const parts = [
@@ -91,6 +103,7 @@ export function schemaText(dimensions: SchemaDimension[]) {
           attribute.uniqueIdentifier ? "Unique identifier" : "",
           attribute.choiceList ? `List: ${attribute.choiceList}` : "",
           attribute.follows ? `Follows: ${attribute.follows}` : "",
+          attribute.linksTo ? `Links to a ${attribute.linksTo} record` : "",
         ].filter(Boolean);
         lines.push(parts.join(". ") + ".");
       }
@@ -114,6 +127,9 @@ function definedField(field: LoadedField, options: { label: string; value: strin
   };
 }
 
+/** Key in the label map that holds record labels for link attributes. */
+const LINK_LABELS = "\u0000links";
+
 async function labelsFor(fields: LoadedField[], values: FieldValue[]) {
   const wanted = new Map<string, Set<string>>();
   for (const value of values) {
@@ -134,21 +150,39 @@ async function labelsFor(fields: LoadedField[], values: FieldValue[]) {
     });
     labels.set(listId, new Map(items.map((item) => [item.value, item.label])));
   }
+  const linkIds = values.flatMap((value) => {
+    const field = fields.find((item) => item.id === value.fieldId);
+    return field?.dataType === "RECORD_LINK" && value.valueText ? value.valueText.split("|").filter(Boolean) : [];
+  });
+  if (linkIds.length) labels.set(LINK_LABELS, await recordLabels(linkIds));
   return labels;
 }
 
 function displayValue(field: LoadedField, value: FieldValue | undefined, labels: Map<string, Map<string, string>>) {
+  if (field.dataType === "RECORD_LINK") {
+    const links = labels.get(LINK_LABELS) ?? new Map<string, string>();
+    const options = (value?.valueText ?? "").split("|").filter(Boolean).map((id) => ({ label: links.get(id) ?? id, value: id }));
+    return displayStored(definedField(field, options), value, options);
+  }
   const options = field.choiceListId
     ? [...(labels.get(field.choiceListId) ?? new Map()).entries()].map(([stored, label]) => ({ label, value: stored }))
     : [];
   return displayStored(definedField(field, options), value, options);
 }
 
-export function knowledgeCard(fields: LoadedField[], values: FieldValue[], labels: Map<string, Map<string, string>>, recordId: string) {
+export function knowledgeCard(
+  allFields: LoadedField[],
+  values: FieldValue[],
+  labels: Map<string, Map<string, string>>,
+  recordId: string,
+  recordType?: { id: string; name: string },
+) {
+  // A card only shows the attributes of its own record type.
+  const fields = recordType ? allFields.filter((field) => field.category.recordType.id === recordType.id) : allFields;
   const byField = new Map(values.map((value) => [value.fieldId, value]));
   const storeKey = fields.find((field) => field.isStoreKey);
   const subject = storeKey ? displayValue(storeKey, byField.get(storeKey.id), labels) : "";
-  const lines = [`Record: ${recordId}`, `Subject: ${subject || recordId}`];
+  const lines = [`Record: ${recordId}`, ...(recordType ? [`Type: ${recordType.name}`] : []), `Subject: ${subject || recordId}`];
   let dimension = "";
   for (const field of fields) {
     const shown = displayValue(field, byField.get(field.id), labels);
@@ -165,8 +199,13 @@ export function knowledgeCard(fields: LoadedField[], values: FieldValue[], label
 async function cardsFor(fields: LoadedField[], requestedIds: string[]) {
   if (!requestedIds.length || !fields.length) return [];
   // Archived records are not knowledge.
-  const active = new Set(
-    (await prisma.location.findMany({ where: { id: { in: requestedIds }, isActive: true }, select: { id: true } })).map((row) => row.id),
+  const active = new Map(
+    (
+      await prisma.location.findMany({
+        where: { id: { in: requestedIds }, isActive: true },
+        select: { id: true, recordType: { select: { id: true, name: true } } },
+      })
+    ).map((row) => [row.id, row.recordType]),
   );
   const locationIds = requestedIds.filter((id) => active.has(id));
   if (!locationIds.length) return [];
@@ -174,7 +213,7 @@ async function cardsFor(fields: LoadedField[], requestedIds: string[]) {
     where: { locationId: { in: locationIds }, fieldId: { in: fields.map((field) => field.id) } },
   });
   const labels = await labelsFor(fields, values);
-  return locationIds.map((id) => knowledgeCard(fields, values.filter((value) => value.locationId === id), labels, id));
+  return locationIds.map((id) => knowledgeCard(fields, values.filter((value) => value.locationId === id), labels, id, active.get(id)));
 }
 
 export async function exportKnowledgeMarkdown(ctx: AccessContext) {
@@ -203,10 +242,18 @@ async function subjectLabels(locationIds: string[]) {
   return new Map(keys.map((row) => [row.locationId, row.valueText || row.locationId]));
 }
 
-export async function searchRecords(ctx: AccessContext, input: { query?: string; dimension?: string; attribute?: string }) {
+export async function searchRecords(
+  ctx: AccessContext,
+  input: { query?: string; type?: string; dimension?: string; attribute?: string },
+) {
   const query = input.query?.trim() ?? "";
   if (!query) return "query is required.";
-  const fields = await visibleFields(ctx);
+  const typeName = input.type?.trim().toLowerCase();
+  const allFields = await visibleFields(ctx);
+  if (typeName && !allFields.some((field) => field.category.recordType.name.toLowerCase() === typeName)) {
+    return "No visible record type matches that name.";
+  }
+  const fields = typeName ? allFields.filter((field) => field.category.recordType.name.toLowerCase() === typeName) : allFields;
   const dimensionName = input.dimension?.trim();
   if (dimensionName && !fields.some((field) => field.category.name.toLowerCase() === dimensionName.toLowerCase())) {
     return "No visible dimension matches that name.";
@@ -257,7 +304,7 @@ export async function searchRecords(ctx: AccessContext, input: { query?: string;
     distinct: ["locationId"],
     take: SEARCH_LIMIT,
   });
-  const cards = await cardsFor(fields, matches.map((row) => row.locationId));
+  const cards = await cardsFor(allFields, matches.map((row) => row.locationId));
   if (!cards.length) return "No records match.";
   return cards.join("\n\n");
 }
@@ -270,7 +317,11 @@ export async function getRecord(ctx: AccessContext, id: string) {
   const fields = await visibleFields(ctx);
   if (!fields.length) return "No record with that id is visible.";
   const cards = await cardsFor(fields, [location.id]);
-  return cards[0] ?? "No record with that id is visible.";
+  if (!cards[0]) return "No record with that id is visible.";
+  const inbound = (await linkedFrom(location.id)).filter((link) => canSeeValue(ctx, link.fieldId, link.categoryId));
+  if (!inbound.length) return cards[0];
+  const lines = inbound.map((link) => `${link.recordType} ${link.label} (record ${link.locationId}) via ${link.attribute}`);
+  return `${cards[0]}\nLinked from:\n${lines.map((line) => `- ${line}`).join("\n")}`;
 }
 
 export async function recentChanges(ctx: AccessContext, since: string) {

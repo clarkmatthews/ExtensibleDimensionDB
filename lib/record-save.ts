@@ -3,6 +3,7 @@ import { choicesForParent } from "@/lib/list-correlation";
 import { choicesForList } from "@/lib/list-items";
 import { categoryAccess, fieldAccess, type AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { withLinkOptions } from "@/lib/record-types";
 import { validateValue, type Choice } from "@/lib/validators";
 import { defaultInput, displayRaw, displayStored, inputToStored, localDateInput, rulesFromField, type DefinedField } from "@/lib/values";
 import type { SavedChange } from "@/lib/workflow";
@@ -25,6 +26,7 @@ export type RecordInput = (field: LoadedField) => string | undefined;
 export type ParentInput = (field: LoadedField) => string | undefined;
 
 export type SaveContext = {
+  recordTypeId: string;
   fields: LoadedField[];
   listById: Map<string, { id: string; parentListId: string | null }>;
   optionCache: Map<string, Choice[]>;
@@ -53,18 +55,23 @@ export async function identifierTaken(db: ValueReader, fieldId: string, value: s
   return Boolean(clash);
 }
 
-/** Loads the active attributes and list metadata once, so a batch of saves can share them. */
-export async function loadSaveContext(): Promise<SaveContext> {
-  const fields = await prisma.fieldDefinition.findMany({
-    where: { isActive: true, category: { isActive: true } },
-    include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
-    orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
-  });
+/**
+ * Loads one record type's active attributes and list metadata once, so a batch of saves
+ * can share them. Link attributes get the target records as their options.
+ */
+export async function loadSaveContext(recordTypeId: string): Promise<SaveContext> {
+  const fields = await withLinkOptions(
+    await prisma.fieldDefinition.findMany({
+      where: { isActive: true, category: { isActive: true, recordTypeId } },
+      include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
+      orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+    }),
+  );
   const listIds = [...new Set(fields.map((field) => field.choiceListId).filter((id): id is string => Boolean(id)))];
   const listRows = listIds.length
     ? await prisma.choiceList.findMany({ where: { id: { in: listIds } }, select: { id: true, parentListId: true } })
     : [];
-  return { fields, listById: new Map(listRows.map((list) => [list.id, list])), optionCache: new Map() };
+  return { recordTypeId, fields, listById: new Map(listRows.map((list) => [list.id, list])), optionCache: new Map() };
 }
 
 /** True when this person may change this attribute on records. */
@@ -77,6 +84,7 @@ export function canUpdateField(access: AccessContext, field: LoadedField) {
 
 /** The choices an attribute allows, given the value of the attribute it follows. */
 export async function choicesFor(ctx: SaveContext, field: LoadedField, parentRaw: string): Promise<Choice[]> {
+  if (field.dataType === "RECORD_LINK") return field.options.map((option) => ({ label: option.label, value: option.value }));
   const parent = field.parentFieldId ? ctx.fields.find((item) => item.id === field.parentFieldId) : undefined;
   const list = field.choiceListId ? ctx.listById.get(field.choiceListId) : undefined;
   if (list?.parentListId) return choicesForList(list.id, parentRaw);
@@ -119,6 +127,13 @@ export async function planSave(
     const rules = rulesFromField(field);
     const parent = field.parentFieldId ? ctx.fields.find((item) => item.id === field.parentFieldId) : undefined;
     rules.options = await choicesFor(ctx, field, parent ? rawOf(parent) : "");
+    if (field.dataType === "RECORD_LINK") {
+      // A link to a record that was archived since stays valid, so the rest of this record can still be edited.
+      const known = new Set(rules.options.map((option) => option.value));
+      for (const id of (stored.get(field.id) ?? "").split("|").filter(Boolean)) {
+        if (!known.has(id)) rules.options.push({ label: id, value: id });
+      }
+    }
     const error = await validateValue(rules, raw);
     if (error) errors.push(`${field.friendlyName}: ${error}`);
     writes.push({ field, raw, options: rules.options });
@@ -167,8 +182,9 @@ export async function saveRecord(input: {
 }): Promise<SaveResult> {
   const { ctx, access, userId, locationId } = input;
   if (locationId) {
-    const existing = await prisma.location.findUnique({ where: { id: locationId }, select: { isActive: true } });
+    const existing = await prisma.location.findUnique({ where: { id: locationId }, select: { isActive: true, recordTypeId: true } });
     if (!existing) return { error: "This record no longer exists." };
+    if (existing.recordTypeId !== ctx.recordTypeId) return { error: "This record belongs to a different record type." };
     if (!existing.isActive) return { error: "This record is archived. Restore it before editing." };
   }
   const plan = await planSave(ctx, access, locationId, input.values, await storedInputs(locationId), input.parentValues ?? input.values);
@@ -185,7 +201,7 @@ export async function saveRecord(input: {
       const previousValues = locationId ? await tx.fieldValue.findMany({ where: { locationId } }) : [];
       const location = locationId
         ? await tx.location.update({ where: { id: locationId }, data: { updatedAt: new Date() } })
-        : await tx.location.create({ data: {} });
+        : await tx.location.create({ data: { recordTypeId: ctx.recordTypeId } });
       const pending = [...plan.writes];
       for (const createdField of ctx.fields.filter((field) => field.isCreatedDate && field.dataType === "DATE")) {
         const existingCreated = await tx.fieldValue.findUnique({

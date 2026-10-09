@@ -33,10 +33,12 @@ export type EditorCategory = {
 
 export function StoreForm({
   locationId,
+  recordTypeId,
   categories,
   readOnly,
 }: {
   locationId?: string;
+  recordTypeId?: string;
   categories: EditorCategory[];
   readOnly: boolean;
 }) {
@@ -124,6 +126,7 @@ export function StoreForm({
   return (
     <form action={onSubmit} className="space-y-6">
       {locationId ? <input type="hidden" name="locationId" value={locationId} /> : null}
+      {!locationId && recordTypeId ? <input type="hidden" name="recordTypeId" value={recordTypeId} /> : null}
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {categories.map((category) => (
         <section key={category.id} className="panel p-4">
@@ -213,7 +216,7 @@ function FieldControl({
       </span>
     );
   }
-  if (field.dataType === "DROPDOWN") {
+  if (field.dataType === "DROPDOWN" || field.dataType === "RECORD_LINK") {
     const current = value ?? field.value;
     const selected = current.split("|").filter(Boolean);
     const controlled = value !== undefined;

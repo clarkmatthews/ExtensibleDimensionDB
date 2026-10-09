@@ -4,20 +4,25 @@ import { ModuleDenied } from "@/components/module-denied";
 import { StoreForm, type EditorCategory } from "@/components/store-form";
 import { canEditModule, categoryAccess, fieldAccess, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { resolveRecordType, withLinkOptions } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { loadFieldChoices } from "@/lib/list-items";
 import { defaultInput, localDateInput } from "@/lib/values";
 
-export default async function NewStorePage() {
+export default async function NewStorePage({ searchParams }: { searchParams: Promise<{ type?: string }> }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const access = await loadAccess(user);
   if (!canEditModule(access, "STORES")) return <ModuleDenied />;
-  const fields = await prisma.fieldDefinition.findMany({
-    where: { isActive: true, category: { isActive: true } },
-    include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
-    orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
-  });
+  const { types, current } = await resolveRecordType((await searchParams).type);
+  if (!current) return <p className="text-sm text-muted">No record types are active.</p>;
+  const fields = await withLinkOptions(
+    await prisma.fieldDefinition.findMany({
+      where: { isActive: true, category: { isActive: true, recordTypeId: current.id } },
+      include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
+      orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
+    }),
+  );
   const choiceMeta = await loadFieldChoices(
     fields.map((field) => ({ id: field.id, choiceListId: field.choiceListId, parentFieldId: field.parentFieldId })),
     (parentId) => {
@@ -68,13 +73,13 @@ export default async function NewStorePage() {
   return (
     <div className="space-y-4">
       <h1 className="flex items-center text-2xl font-semibold">
-        New dimension
+        {types.length > 1 ? `New ${current.name}` : "New dimension"}
         <HelpTip text="Create a record from the attributes you can update. A date attribute set to fill from the record date shows today's date and stays read only. Saving starts workflows that run when a record is created." />
       </h1>
       {categories.size === 0 ? (
         <p className="text-sm text-muted">Add dimensions and attributes before creating a record.</p>
       ) : (
-        <StoreForm categories={[...categories.values()]} readOnly={!canUpdate} />
+        <StoreForm recordTypeId={current.id} categories={[...categories.values()]} readOnly={!canUpdate} />
       )}
     </div>
   );

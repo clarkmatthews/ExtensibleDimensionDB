@@ -12,6 +12,7 @@ import { getCurrentUser } from "@/lib/session";
 import { choicesForList } from "@/lib/list-items";
 import { displayRaw, displayStored, inputToStored, rulesFromField } from "@/lib/values";
 import { enqueueRecordEvent } from "@/lib/webhooks";
+import { withLinkOptions } from "@/lib/record-types";
 import { runWorkflows, type SavedChange } from "@/lib/workflow";
 import {
   columnKeyError,
@@ -72,10 +73,19 @@ export async function saveCategory(formData: FormData) {
 
     const blocked = definitionError(access);
     if (blocked) redirect(`/admin/definition?error=${encodeURIComponent(blocked)}`);
+    // Dimension names are unique across record types, so a name always means one dimension
+    // in permissions, imports, the API, and AI knowledge.
+    const clash = await prisma.category.findFirst({
+      where: { name: { equals: name, mode: "insensitive" }, ...(id ? { id: { not: id } } : {}) },
+      include: { recordType: { select: { name: true } } },
+    });
+    if (clash) redirect(`/admin/definition?error=${encodeURIComponent(`${clash.recordType.name} already has a dimension named ${clash.name}. Choose another name.`)}`);
     if (!id) {
+      const recordType = await prisma.recordType.findFirst({ where: { id: text(formData, "recordTypeId"), isActive: true } });
+      if (!recordType) redirect("/admin/definition?error=Choose%20a%20record%20type%20for%20the%20dimension.");
       const last = await prisma.category.aggregate({ _max: { sortOrder: true } });
       await prisma.category.create({
-        data: { name, description, sortOrder: (last._max.sortOrder ?? 0) + 1 },
+        data: { name, description, recordTypeId: recordType.id, sortOrder: (last._max.sortOrder ?? 0) + 1 },
       });
     } else {
       const rights = categoryAccess(access, id);
@@ -91,7 +101,11 @@ export async function moveCategory(formData: FormData) {
     const { user, access } = await editor();
     const id = text(formData, "id");
     const direction = text(formData, "direction") === "up" ? -1 : 1;
-    const categories = await prisma.category.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
+    const current = await prisma.category.findUnique({ where: { id }, select: { recordTypeId: true } });
+    const categories = await prisma.category.findMany({
+      where: { isActive: true, recordTypeId: current?.recordTypeId ?? "" },
+      orderBy: { sortOrder: "asc" },
+    });
     const index = categories.findIndex((category) => category.id === id);
     const swap = categories[index + direction];
     if (!swap || index < 0) return;
@@ -181,6 +195,18 @@ export async function saveField(formData: FormData) {
       return { error: "This attribute already has dimension values, so its type cannot be changed. Hide it and add a new attribute." };
     }
 
+    const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { recordTypeId: true } });
+    if (!category) return { error: "This dimension was not found." };
+    if (existing && existing.categoryId !== categoryId) return { error: "An attribute cannot move to another dimension." };
+    const linkTypeId = dataType === "RECORD_LINK" ? text(formData, "linkTypeId") : "";
+    if (dataType === "RECORD_LINK") {
+      const target = linkTypeId ? await prisma.recordType.findUnique({ where: { id: linkTypeId } }) : null;
+      if (!target) return { error: "Choose the record type this attribute links to." };
+      if (existing && existing.linkTypeId && existing.linkTypeId !== linkTypeId && existing.values.length > 0) {
+        return { error: "This attribute already links to records, so its target type cannot be changed. Hide it and add a new attribute." };
+      }
+    }
+
     const listField = dataType === "DROPDOWN" || dataType === "RADIO";
     const requestedListId = listField ? text(formData, "choiceListId") : "";
     const choiceList = requestedListId
@@ -217,7 +243,8 @@ export async function saveField(formData: FormData) {
       return { error: "A list attribute needs a list with at least one active item." };
     }
 
-    const maxLength = optionalNumber(formData, "maxLength");
+    // Only text attributes have a length limit; the attribute form posts its default for every type.
+    const maxLength = dataType === "TEXT" || dataType === "BIG_TEXT" ? optionalNumber(formData, "maxLength") : null;
     if (dataType === "TEXT" && (maxLength == null || maxLength < 1 || maxLength > 512)) {
       return { error: "Text max length is required and must be from 1 to 512." };
     }
@@ -251,6 +278,7 @@ export async function saveField(formData: FormData) {
       description: text(formData, "description"),
       dataType: dataType as DataType,
       categoryId,
+      linkTypeId: linkTypeId || null,
       isRequired: rules.isRequired,
       isStoreKey: formData.get("isStoreKey") === "on",
       isActiveFilter: dataType === "CHECKBOX" && formData.get("isActiveFilter") === "on",
@@ -268,22 +296,24 @@ export async function saveField(formData: FormData) {
       negativeOk: rules.negativeOk,
       decimalOk: rules.decimalOk,
       numVisible: optionalNumber(formData, "numVisible") ?? 1,
-      multiple: rules.multiple && dataType === "DROPDOWN",
+      multiple: rules.multiple && (dataType === "DROPDOWN" || dataType === "RECORD_LINK"),
       is24Hour: rules.is24Hour || dataType !== "TIME",
       checkboxLabel: text(formData, "checkboxLabel"),
       minDate: rules.minDate,
       maxDate: rules.maxDate,
     };
 
+    // Each record type has at most one unique identifier, one active filter, and one created date.
+    const sameType = { category: { recordTypeId: category.recordTypeId } };
     const saved = await prisma.$transaction(async (tx) => {
       if (data.isStoreKey) {
-        await tx.fieldDefinition.updateMany({ data: { isStoreKey: false }, where: { isStoreKey: true } });
+        await tx.fieldDefinition.updateMany({ data: { isStoreKey: false }, where: { isStoreKey: true, ...sameType } });
       }
       if (data.isActiveFilter) {
-        await tx.fieldDefinition.updateMany({ data: { isActiveFilter: false }, where: { isActiveFilter: true } });
+        await tx.fieldDefinition.updateMany({ data: { isActiveFilter: false }, where: { isActiveFilter: true, ...sameType } });
       }
       if (data.isCreatedDate) {
-        await tx.fieldDefinition.updateMany({ data: { isCreatedDate: false }, where: { isCreatedDate: true } });
+        await tx.fieldDefinition.updateMany({ data: { isCreatedDate: false }, where: { isCreatedDate: true, ...sameType } });
       }
       const field = existing
         ? await tx.fieldDefinition.update({ where: { id }, data })
@@ -369,8 +399,9 @@ export async function applyDefaultToStores(fieldId: string, locationIds: string[
     const { user, access } = await editor();
     const blocked = definitionError(access);
     if (blocked) return { error: blocked, applied: 0 };
-    const field = await prisma.fieldDefinition.findUnique({ where: { id: fieldId }, include: { options: true } });
-    if (!field) return { error: "This attribute was not found.", applied: 0 };
+    const loaded = await prisma.fieldDefinition.findUnique({ where: { id: fieldId }, include: { options: true, category: { select: { recordTypeId: true } } } });
+    if (!loaded) return { error: "This attribute was not found.", applied: 0 };
+    const [field] = await withLinkOptions([loaded]);
     if (field.isCreatedDate) return { error: `${field.friendlyName} is filled in when the dimension is added.`, applied: 0 };
     const rights = categoryAccess(access, field.categoryId);
     if (!user.isAdmin && !rights.canEditFields) return { error: "You cannot update this attribute.", applied: 0 };
@@ -397,7 +428,10 @@ export async function applyDefaultToStores(fieldId: string, locationIds: string[
 
     const ids = [...new Set(locationIds.filter(Boolean))];
     if (!ids.length) return { error: "Choose at least one dimension.", applied: 0 };
-    const found = await prisma.location.findMany({ where: { id: { in: ids }, isActive: true }, select: { id: true } });
+    const found = await prisma.location.findMany({
+      where: { id: { in: ids }, isActive: true, recordTypeId: field.category.recordTypeId },
+      select: { id: true },
+    });
     if (found.length !== ids.length) return { error: "One of the selected dimensions is no longer available.", applied: 0 };
 
     if (field.isStoreKey && raw.trim() && found.length > 1) {
@@ -437,5 +471,50 @@ export async function applyDefaultToStores(fieldId: string, locationIds: string[
     revalidatePath("/changelog");
     revalidatePath("/dashboard");
     return { error: "", applied: found.length };
+  });
+}
+
+/** Creates or renames a record type. */
+export async function saveRecordType(formData: FormData) {
+  return audited("definition.saveRecordType", [formData], async () => {
+    const { access } = await editor();
+    const blocked = definitionError(access);
+    if (blocked) redirect(`/admin/definition?error=${encodeURIComponent(blocked)}`);
+    const id = text(formData, "id");
+    const name = text(formData, "name");
+    const description = text(formData, "description");
+    if (!name) redirect("/admin/definition?error=Enter%20a%20record%20type%20name.");
+    if (name.length > 60) redirect("/admin/definition?error=Use%20at%20most%2060%20characters.");
+    const clash = await prisma.recordType.findFirst({
+      where: { name: { equals: name, mode: "insensitive" }, ...(id ? { id: { not: id } } : {}) },
+    });
+    if (clash) redirect(`/admin/definition?error=${encodeURIComponent(`A record type named ${clash.name} already exists.`)}`);
+    if (id) {
+      await prisma.recordType.update({ where: { id }, data: { name, description } });
+    } else {
+      const last = await prisma.recordType.aggregate({ _max: { sortOrder: true } });
+      await prisma.recordType.create({ data: { name, description, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
+    }
+    revalidatePath("/admin/definition");
+    revalidatePath("/dimensions");
+    redirect("/admin/definition?saved=type");
+  });
+}
+
+/** Hides or shows a record type. Its dimensions, attributes, and records are kept. */
+export async function setRecordTypeActive(formData: FormData) {
+  return audited("definition.setRecordTypeActive", [formData], async () => {
+    const { access } = await editor();
+    const blocked = definitionError(access);
+    if (blocked) redirect(`/admin/definition?error=${encodeURIComponent(blocked)}`);
+    const id = text(formData, "id");
+    const isActive = text(formData, "active") === "1";
+    if (!isActive && (await prisma.recordType.count({ where: { isActive: true, id: { not: id } } })) === 0) {
+      redirect("/admin/definition?error=At%20least%20one%20record%20type%20must%20stay%20active.");
+    }
+    await prisma.recordType.update({ where: { id }, data: { isActive } });
+    revalidatePath("/admin/definition");
+    revalidatePath("/dimensions");
+    redirect("/admin/definition?saved=type");
   });
 }

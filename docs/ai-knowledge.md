@@ -19,6 +19,8 @@ Example: key `is_active`, display name Active, description "Whether the restaura
 A record becomes a short knowledge card. The card is the text a model cites. It is not a raw database row.
 
 ```text
+Record: clx0abc123
+Type: Location
 Subject: Mesa Verde Grill
 Dimension: Core
 Phone Number: 480-555-0142 (Main phone number)
@@ -28,7 +30,9 @@ Active: Active (Whether the restaurant is open)
 
 Rules for every card:
 
-- The subject line is the unique-identifier attribute's display value.
+- The type line is the record type, such as Location or Vendor.
+- The subject line is the unique-identifier attribute's display value for that type.
+- A link to another record shows the linked record's identifier, the same as the record page.
 - Facts are grouped by dimension name.
 - Each fact line is `Display name: value (description)`.
 - Omit a description when the attribute has none.
@@ -75,7 +79,7 @@ The process speaks MCP on stdin and stdout. Status messages go to stderr. `npm r
 
 Standing context. A model loads it when the schema matters and can cache it until a dimension or attribute changes.
 
-Returns active dimensions and, for each attribute:
+Returns active dimensions grouped by record type and, for each attribute:
 
 - key, display name, and description
 - dimension name
@@ -83,12 +87,14 @@ Returns active dimensions and, for each attribute:
 - whether it is the unique identifier
 - choice list name, when the attribute uses one
 - the attribute it follows, when its list is a child list
+- the record type it links to, for a link attribute
 
 ### Tool `search_records`
 
 Finds subjects. Arguments:
 
 - `query` (text, required)
+- `type` (optional record type name, such as Location)
 - `dimension` (optional dimension name)
 - `attribute` (optional attribute key or display name)
 
@@ -98,7 +104,7 @@ Returns matching knowledge cards and each record id. The search covers the subje
 
 One subject. Argument: `id` (record id).
 
-Returns the knowledge card grouped by dimension, limited to attributes the view-only user can see.
+Returns the knowledge card grouped by dimension, limited to attributes the view-only user can see, followed by the records that link to it.
 
 ### Tool `recent_changes`
 

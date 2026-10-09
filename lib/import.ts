@@ -89,10 +89,12 @@ export function normalizeCell(field: LoadedField, cell: string, choices: Choice[
     case "NUMERIC":
       return value.replace(/,/g, "");
     case "DROPDOWN":
-    case "RADIO": {
+    case "RADIO":
+    case "RECORD_LINK": {
       if (!value) return "";
       if (!field.multiple) return matchChoice(value, choices)?.value ?? value;
       // Export joins several choices with ", "; the form stores them joined with "|".
+      // For links, the choices are the target records, matched by their identifier.
       const tokens = value.includes("|") ? value.split("|") : value.split(",");
       return tokens
         .map((token) => token.trim())
@@ -131,7 +133,11 @@ async function prepare(csv: string, ctx: SaveContext, access: AccessContext) {
   const existing = new Map<string, string>();
   if (identifierField && identifiers.some(Boolean)) {
     const rows = await prisma.fieldValue.findMany({
-      where: { fieldId: identifierField.id, valueText: { in: [...new Set(identifiers.filter(Boolean))] }, location: { isActive: true } },
+      where: {
+        fieldId: identifierField.id,
+        valueText: { in: [...new Set(identifiers.filter(Boolean))] },
+        location: { isActive: true, recordTypeId: ctx.recordTypeId },
+      },
       select: { valueText: true, locationId: true },
     });
     for (const row of rows) if (row.valueText) existing.set(row.valueText, row.locationId);

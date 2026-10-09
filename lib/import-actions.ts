@@ -8,6 +8,7 @@ import { MAX_IMPORT_BYTES, previewImport, rowsToApply, type ApplyResult, type Im
 import { canEditModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { loadSaveContext, saveRecord } from "@/lib/record-save";
+import { resolveRecordType } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { enqueueRecordEvent } from "@/lib/webhooks";
 import { runWorkflows } from "@/lib/workflow";
@@ -30,11 +31,14 @@ export async function uploadImport(formData: FormData) {
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) redirect(`${PAGE}?error=${encodeURIComponent("Choose a CSV file.")}`);
   if (file.size > MAX_IMPORT_BYTES) redirect(`${PAGE}?error=${encodeURIComponent("The file is larger than 5 MB.")}`);
+  const recordType = (await resolveRecordType(String(formData.get("recordTypeId") ?? ""))).current;
+  if (!recordType) redirect(`${PAGE}?error=${encodeURIComponent("Choose a record type.")}`);
   const csv = await file.text();
-  const summary = await previewImport(csv, await loadSaveContext(), access);
+  const summary = await previewImport(csv, await loadSaveContext(recordType.id), access);
   const job = await prisma.importJob.create({
     data: {
       userId: user.id,
+      recordTypeId: recordType.id,
       fileName: file.name.slice(0, 200),
       csv,
       summary: summary as unknown as Prisma.InputJsonValue,
@@ -55,7 +59,7 @@ export async function applyImport(formData: FormData) {
     const claimed = await prisma.importJob.updateMany({ where: { id: job.id, status: "PREVIEWED" }, data: { status: "APPLYING" } });
     if (claimed.count === 0) redirect(`${PAGE}?job=${job.id}`);
 
-    const ctx = await loadSaveContext();
+    const ctx = await loadSaveContext(job.recordTypeId);
     const preview = job.summary as unknown as ImportSummary;
     const result: ApplyResult = { created: 0, updated: 0, unchanged: 0, failed: [] };
     if (!preview?.fatal) {

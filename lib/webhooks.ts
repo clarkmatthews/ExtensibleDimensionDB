@@ -121,7 +121,7 @@ export async function enqueueRecordEvent(input: RecordEvent) {
     if (!endpoints.length) return;
     const changed = input.changes ?? [];
     const fieldIds = [...new Set(changed.map((change) => change.fieldId))];
-    const [fields, label] = await Promise.all([
+    const [fields, label, location] = await Promise.all([
       fieldIds.length
         ? prisma.fieldDefinition.findMany({ where: { id: { in: fieldIds } }, include: { category: true } })
         : Promise.resolve([]),
@@ -129,6 +129,7 @@ export async function enqueueRecordEvent(input: RecordEvent) {
         where: { locationId: input.locationId, field: { isStoreKey: true } },
         include: { field: { select: { categoryId: true } } },
       }),
+      prisma.location.findUnique({ where: { id: input.locationId }, select: { recordType: { select: { name: true } } } }),
     ]);
     const byId = new Map(fields.map((field) => [field.id, field]));
     const occurredAt = new Date().toISOString();
@@ -156,7 +157,7 @@ export async function enqueueRecordEvent(input: RecordEvent) {
         payload: {
           event: input.event,
           occurredAt,
-          record: { id: input.locationId, label: showLabel ? label.valueText : null },
+          record: { id: input.locationId, type: location?.recordType.name ?? null, label: showLabel ? label.valueText : null },
           actor: { name: input.actorName },
           changes,
         },

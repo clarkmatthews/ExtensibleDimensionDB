@@ -13,6 +13,7 @@ export const DATA_TYPES = [
   "EMAIL",
   "PHONE",
   "COORDINATE",
+  "RECORD_LINK",
 ] as const;
 
 export type DataTypeName = (typeof DATA_TYPES)[number];
@@ -32,4 +33,10 @@ export const TYPE_LABELS: Record<DataTypeName, string> = {
   EMAIL: "Email",
   PHONE: "Phone",
   COORDINATE: "Coordinate",
+  RECORD_LINK: "Link to record",
 };
+
+/** Attribute types whose value is chosen from a set of options. */
+export function isChoiceType(dataType: string) {
+  return dataType === "DROPDOWN" || dataType === "RADIO" || dataType === "RECORD_LINK";
+}

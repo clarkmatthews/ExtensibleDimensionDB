@@ -84,6 +84,8 @@ export async function compilePattern(rules: FieldRules): Promise<string | null> 
 }
 
 function lengthLimit(rules: FieldRules): number | null {
+  // A link stores record ids, so a character limit would cap how many records can be linked.
+  if (rules.dataType === "RECORD_LINK") return null;
   if (rules.maxLength && rules.maxLength > 0) return rules.maxLength;
   if (rules.dataType === "TEXT") return 512;
   if (rules.dataType === "BIG_TEXT") return 6400;
@@ -139,11 +141,13 @@ export async function validateValue(rules: FieldRules, raw: string): Promise<str
     return "Enter a coordinate as latitude, longitude.";
   }
 
-  if (rules.dataType === "RADIO" || rules.dataType === "DROPDOWN") {
+  if (rules.dataType === "RADIO" || rules.dataType === "DROPDOWN" || rules.dataType === "RECORD_LINK") {
     const allowed = new Set(rules.options.map((option) => option.value));
     const selected = rules.multiple ? value.split("|").filter(Boolean) : [value];
     if (!rules.multiple && selected.length !== 1) return "Choose one value.";
-    if (selected.some((item) => !allowed.has(item))) return "Choose one of the allowed values.";
+    if (selected.some((item) => !allowed.has(item))) {
+      return rules.dataType === "RECORD_LINK" ? "Choose an active record of the linked type." : "Choose one of the allowed values.";
+    }
   }
 
   if (rules.validationPattern.trim()) {

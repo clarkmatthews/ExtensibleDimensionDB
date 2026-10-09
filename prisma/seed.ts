@@ -94,13 +94,23 @@ async function main() {
     });
   }
 
+  // The first record type. The migration creates it on existing databases; this covers new ones.
+  const recordType = await prisma.recordType.upsert({
+    where: { id: "location" },
+    update: {},
+    create: { id: "location", name: "Location", description: "The records this database started with.", sortOrder: 1 },
+  });
+
   const category = await prisma.category.upsert({
     where: { id: (await prisma.category.findFirst({ where: { name: "General" } }))?.id ?? "missing-general" },
     update: { description: "Core restaurant information", isActive: true },
-    create: { name: "General", description: "Core restaurant information", sortOrder: 1 },
+    create: { name: "General", description: "Core restaurant information", sortOrder: 1, recordTypeId: recordType.id },
   });
 
-  await prisma.fieldDefinition.updateMany({ data: { isStoreKey: false }, where: { isStoreKey: true, key: { not: "name" } } });
+  await prisma.fieldDefinition.updateMany({
+    data: { isStoreKey: false },
+    where: { isStoreKey: true, key: { not: "name" }, category: { recordTypeId: category.recordTypeId } },
+  });
 
   const fields = [];
   for (const [index, field] of generalFields.entries()) {
@@ -189,7 +199,7 @@ async function main() {
     });
     const location = existing
       ? await prisma.location.findUniqueOrThrow({ where: { id: existing.locationId } })
-      : await prisma.location.create({ data: {} });
+      : await prisma.location.create({ data: { recordTypeId: category.recordTypeId } });
 
     for (const field of fields) {
       const raw = restaurant[field.key] ?? "";
