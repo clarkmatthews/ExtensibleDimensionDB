@@ -50,7 +50,7 @@ export type FieldDraft = {
   options: ListItem[];
 };
 
-const empty = (categoryId: string): FieldDraft => ({
+const empty = (): FieldDraft => ({
   id: "",
   key: "",
   friendlyName: "",
@@ -97,7 +97,7 @@ export function FieldForm({
   catalogs?: FieldListChoice[];
   canManageLists?: boolean;
 }) {
-  const [draft, setDraft] = useState<FieldDraft>(initial ?? empty(categoryId));
+  const [draft, setDraft] = useState<FieldDraft>(initial ?? empty());
   const [error, setError] = useState("");
   const [open, setOpen] = useState(!initial);
   const [askStores, setAskStores] = useState(false);
@@ -348,7 +348,7 @@ export function FieldForm({
                 </Link>
               ) : null}
               <label>
-                <span className="label">Follows <HelpTip text="The dimension uses the selected attribute's value to decide which items to show. Point a third attribute at this one when the choices should narrow again." /></span>
+                <span className="label">Follows <HelpTip text="The dimension uses the selected attribute&apos;s value to decide which items to show. Point a third attribute at this one when the choices should narrow again." /></span>
                 <select className="field" value={draft.parentFieldId} onChange={(event) => patch({ parentFieldId: event.target.value })}>
                   <option value="">No other attribute</option>
                   {lists
@@ -360,7 +360,7 @@ export function FieldForm({
                     ))}
                 </select>
                 <span className="mt-1 block text-xs text-muted">
-                  The dimension uses the selected attribute's value to decide which items from the list to show.
+                  The dimension uses the selected attribute&apos;s value to decide which items from the list to show.
                 </span>
               </label>
               {draft.dataType === "DROPDOWN" ? (
@@ -392,5 +392,5 @@ export function FieldForm({
 }
 
 export function blankField(): FieldDraft {
-  return empty("");
+  return empty();
 }

@@ -67,17 +67,20 @@ export function Shell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
+  // The menu belongs to the page it was opened on, so navigating closes it.
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  const open = openOn === pathname;
+  const setOpen = (next: boolean | ((current: boolean) => boolean)) =>
+    setOpenOn((current) => {
+      const value = typeof next === "function" ? next(current === pathname) : next;
+      return value ? pathname : null;
+    });
   const items = visibleItems(new Set(allowedModules));
-
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     if (!open) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") setOpenOn(null);
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -136,7 +139,6 @@ export function Shell({
               }
               const childrenLinks = item.children;
               if (!childrenLinks.length) return null;
-              const groupActive = childrenLinks.some((child) => isCurrent(pathname, child.href));
               return (
                 <div key={item.label}>
                   <p className="px-3 py-2 text-sm font-medium text-white">

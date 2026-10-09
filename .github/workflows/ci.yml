@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dimensionUser
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: dimensionInfo
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dimensionUser -d dimensionInfo"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://dimensionUser:ci-password@localhost:5432/dimensionInfo
+      AUTH_SECRET: ci-only-secret-that-is-long-enough-0123456789
+      ADMIN_PASSWORD: Ci-Only-Admin-Pass-2026!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply every migration to an empty database
+        run: npx prisma migrate deploy
+      - name: Seed, then seed again to confirm it is safe to repeat
+        run: npm run db:seed && npm run db:seed
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npx next build

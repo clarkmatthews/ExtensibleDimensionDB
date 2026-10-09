@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
+import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, categoryAccess, fieldAccess, loadAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
@@ -22,7 +23,8 @@ type ValueReader = Pick<Prisma.TransactionClient, "fieldValue">;
 
 async function identifierTaken(db: ValueReader, fieldId: string, value: string, locationId: string) {
   const clash = await db.fieldValue.findFirst({
-    where: { fieldId, valueText: value, ...(locationId ? { locationId: { not: locationId } } : {}) },
+    // Archived records do not hold their identifier; restoring checks for a clash instead.
+    where: { fieldId, valueText: value, location: { isActive: true }, ...(locationId ? { locationId: { not: locationId } } : {}) },
     select: { id: true },
   });
   return Boolean(clash);
@@ -38,6 +40,11 @@ export async function saveStore(formData: FormData) {
   const { user, access } = await actor();
   if (!canEditModule(access, "STORES")) return { error: "You cannot change dimensions." };
   const locationId = String(formData.get("locationId") ?? "");
+  if (locationId) {
+    const existing = await prisma.location.findUnique({ where: { id: locationId }, select: { isActive: true } });
+    if (!existing) return { error: "This record no longer exists." };
+    if (!existing.isActive) return { error: "This record is archived. Restore it before editing." };
+  }
   const fields = await prisma.fieldDefinition.findMany({
     where: { isActive: true, category: { isActive: true } },
     include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
@@ -181,7 +188,8 @@ export async function startWorkflow(formData: FormData) {
   if (!canEditModule(access, "STORES")) redirect("/dimensions?error=You%20cannot%20change%20dimensions.");
   const locationId = String(formData.get("locationId") ?? "");
   const processId = String(formData.get("processId") ?? "");
-  const error = await startManualProcess(locationId, processId, user.id);
+  const target = await prisma.location.findUnique({ where: { id: locationId }, select: { isActive: true } });
+  const error = !target?.isActive ? "Restore this record before starting a workflow." : await startManualProcess(locationId, processId, user.id);
   revalidatePath("/dashboard");
   revalidatePath(`/dimensions/${locationId}`);
   redirect(error ? `/dimensions/${locationId}?error=${encodeURIComponent(error)}` : `/dimensions/${locationId}`);
@@ -206,4 +214,56 @@ export async function taskAction(formData: FormData) {
   const returnTo = String(formData.get("returnTo") ?? "");
   const dest = returnTo.startsWith("/reports/tasks") || returnTo.startsWith("/dashboard") ? returnTo.split("?")[0] : "/dashboard";
   redirect(error ? `${dest}?error=${encodeURIComponent(error)}` : dest);
+}
+
+/** Archives a record: hides it everywhere, blocks edits, and pauses its open workflows. */
+export async function archiveRecord(formData: FormData) {
+  const locationId = String(formData.get("locationId") ?? "");
+  return audited("records.archive", [formData], async () => {
+    const { user, access } = await actor();
+    if (!canEditModule(access, "STORES")) redirect(`/dimensions/${locationId}?error=${encodeURIComponent("You cannot archive records.")}`);
+    await prisma.$transaction([
+      prisma.location.update({
+        where: { id: locationId },
+        data: { isActive: false, archivedAt: new Date(), archivedById: user.id },
+      }),
+      prisma.storeProcess.updateMany({
+        where: { locationId, status: "ACTIVE", suspended: false },
+        data: { suspended: true, suspendedByArchive: true },
+      }),
+    ]);
+    revalidatePath("/dimensions");
+    revalidatePath("/dashboard");
+    redirect(`/dimensions/${locationId}`);
+  });
+}
+
+/** Restores an archived record and resumes the workflows that archiving paused. */
+export async function restoreRecord(formData: FormData) {
+  const locationId = String(formData.get("locationId") ?? "");
+  return audited("records.restore", [formData], async () => {
+    const { access } = await actor();
+    if (!canEditModule(access, "STORES")) redirect(`/dimensions/${locationId}?error=${encodeURIComponent("You cannot restore records.")}`);
+    const location = await prisma.location.findUnique({ where: { id: locationId }, include: { values: true } });
+    if (!location) redirect("/dimensions/archived");
+    // A record archived long ago may share its identifier with one created since.
+    const keyFields = await prisma.fieldDefinition.findMany({ where: { isStoreKey: true }, select: { id: true, friendlyName: true } });
+    for (const field of keyFields) {
+      const value = location.values.find((row) => row.fieldId === field.id)?.valueText?.trim();
+      if (value && (await identifierTaken(prisma, field.id, value, locationId))) {
+        redirect(`/dimensions/${locationId}?error=${encodeURIComponent(`Another record already uses this ${field.friendlyName}. Change one of them first.`)}`);
+      }
+    }
+    await prisma.$transaction([
+      prisma.location.update({ where: { id: locationId }, data: { isActive: true, archivedAt: null, archivedById: null } }),
+      prisma.storeProcess.updateMany({
+        where: { locationId, suspendedByArchive: true },
+        data: { suspended: false, suspendedByArchive: false },
+      }),
+    ]);
+    revalidatePath("/dimensions");
+    revalidatePath("/dimensions/archived");
+    revalidatePath("/dashboard");
+    redirect(`/dimensions/${locationId}`);
+  });
 }

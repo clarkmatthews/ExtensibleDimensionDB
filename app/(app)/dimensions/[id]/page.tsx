@@ -7,7 +7,7 @@ import { canEditModule, canSeeValue, canViewModule, categoryAccess, fieldAccess,
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { loadFieldChoices } from "@/lib/list-items";
-import { startWorkflow } from "@/lib/store-actions";
+import { archiveRecord, restoreRecord, startWorkflow } from "@/lib/store-actions";
 import { localDateInput, storedToInput } from "@/lib/values";
 
 export default async function StorePage({
@@ -26,6 +26,10 @@ export default async function StorePage({
   const access = await loadAccess(user);
   if (!canViewModule(access, "STORES")) return <ModuleDenied />;
   const moduleEdit = canEditModule(access, "STORES");
+  const archived = !location.isActive;
+  const archivedBy = location.archivedById
+    ? (await prisma.user.findUnique({ where: { id: location.archivedById }, select: { name: true } }))?.name ?? ""
+    : "";
   const highlight = new Set<string>();
   if (task) {
     const openTask = await prisma.task.findUnique({
@@ -110,8 +114,28 @@ export default async function StorePage({
         <HelpTip text="Edit the values for this record. An attribute's description appears beside it. Attributes you cannot update are read only. When you open this page from an action, the attributes that step requires are highlighted. Changelog lists saved edits for this record." />
       </h1>
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
-      <StoreForm locationId={location.id} categories={[...categories.values()]} readOnly={!canUpdate} />
-      {canUpdate && manualProcesses.length ? (
+      {archived ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-warn">
+          <span>
+            Archived {location.archivedAt?.toLocaleString() ?? ""}{archivedBy ? ` by ${archivedBy}` : ""}. It is hidden from the grid, exports, the share API, and AI knowledge, and it cannot be edited.
+          </span>
+          {moduleEdit ? (
+            <form action={restoreRecord}>
+              <input type="hidden" name="locationId" value={location.id} />
+              <button className="btn-quiet" type="submit">Restore</button>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
+      <StoreForm locationId={location.id} categories={[...categories.values()]} readOnly={!canUpdate || archived} />
+      {!archived && moduleEdit ? (
+        <form action={archiveRecord} className="flex items-center">
+          <input type="hidden" name="locationId" value={location.id} />
+          <button className="btn-quiet" type="submit">Archive record</button>
+          <HelpTip text="Hides the record from the grid, exports, the share API, and AI knowledge, and pauses its open workflows. Its values and changelog are kept. Archived records are listed under Archived on the Dimension page and can be restored." />
+        </form>
+      ) : null}
+      {!archived && canUpdate && manualProcesses.length ? (
         <form action={startWorkflow} className="panel flex flex-wrap items-end gap-3 p-4">
           <input type="hidden" name="locationId" value={location.id} />
           <label>

@@ -134,12 +134,11 @@ export default async function PermissionsPage({
 }
 
 function NavigationChoices({ modulePerms }: { modulePerms: { module: string; grantLevel: string }[] }) {
-  let previousGroup = "";
   return (
     <div className="space-y-2">
-      {NAV_MODULES.map((item) => {
+      {NAV_MODULES.map((item, index) => {
+        const previousGroup: string = index > 0 ? NAV_MODULES[index - 1].group : "";
         const header = item.group && item.group !== previousGroup ? item.group : "";
-        previousGroup = item.group;
         const level = modulePerms.find((row) => row.module === item.id)?.grantLevel ?? "NONE";
         return (
           <div key={item.id}>
