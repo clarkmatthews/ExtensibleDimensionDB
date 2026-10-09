@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ChoiceSource, DataType, Prisma } from "@prisma/client";
 import { deleteCategoryGraph, deleteFieldGraph, previewCategory, previewField } from "@/lib/cascade-delete";
+import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, canViewModule, categoryAccess, loadAccess } from "@/lib/permissions";
 import { buildStoreTargets } from "@/lib/store-targets";
 import { getCurrentUser } from "@/lib/session";
 import { choicesForList } from "@/lib/list-items";
-import { inputToStored, rulesFromField } from "@/lib/values";
+import { displayRaw, displayStored, inputToStored, rulesFromField } from "@/lib/values";
+import { runWorkflows, type SavedChange } from "@/lib/workflow";
 import {
   columnKeyError,
   compilePattern,
@@ -60,43 +62,47 @@ function optionalNumber(formData: FormData, name: string) {
 }
 
 export async function saveCategory(formData: FormData) {
-  const { user, access } = await editor();
-  const id = text(formData, "id");
-  const name = text(formData, "name");
-  const description = text(formData, "description");
-  if (!name) redirect("/admin/definition?error=Dimension%20name%20is%20required.");
+  return audited("definition.saveCategory", [formData], async () => {
+    const { user, access } = await editor();
+    const id = text(formData, "id");
+    const name = text(formData, "name");
+    const description = text(formData, "description");
+    if (!name) redirect("/admin/definition?error=Dimension%20name%20is%20required.");
 
-  const blocked = definitionError(access);
-  if (blocked) redirect(`/admin/definition?error=${encodeURIComponent(blocked)}`);
-  if (!id) {
-    const last = await prisma.category.aggregate({ _max: { sortOrder: true } });
-    await prisma.category.create({
-      data: { name, description, sortOrder: (last._max.sortOrder ?? 0) + 1 },
-    });
-  } else {
-    const rights = categoryAccess(access, id);
-    if (!user.isAdmin && !rights.canEditCategory) redirect("/admin/definition?error=You%20cannot%20edit%20this%20dimension.");
-    await prisma.category.update({ where: { id }, data: { name, description } });
-  }
-  revalidatePath("/admin/definition");
+    const blocked = definitionError(access);
+    if (blocked) redirect(`/admin/definition?error=${encodeURIComponent(blocked)}`);
+    if (!id) {
+      const last = await prisma.category.aggregate({ _max: { sortOrder: true } });
+      await prisma.category.create({
+        data: { name, description, sortOrder: (last._max.sortOrder ?? 0) + 1 },
+      });
+    } else {
+      const rights = categoryAccess(access, id);
+      if (!user.isAdmin && !rights.canEditCategory) redirect("/admin/definition?error=You%20cannot%20edit%20this%20dimension.");
+      await prisma.category.update({ where: { id }, data: { name, description } });
+    }
+    revalidatePath("/admin/definition");
+  });
 }
 
 export async function moveCategory(formData: FormData) {
-  const { user, access } = await editor();
-  const id = text(formData, "id");
-  const direction = text(formData, "direction") === "up" ? -1 : 1;
-  const categories = await prisma.category.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
-  const index = categories.findIndex((category) => category.id === id);
-  const swap = categories[index + direction];
-  if (!swap || index < 0) return;
-  if (definitionError(access)) return;
-  const rights = categoryAccess(access, id);
-  if (!user.isAdmin && !rights.canEditCategory) return;
-  await prisma.$transaction([
-    prisma.category.update({ where: { id }, data: { sortOrder: swap.sortOrder } }),
-    prisma.category.update({ where: { id: swap.id }, data: { sortOrder: categories[index].sortOrder } }),
-  ]);
-  revalidatePath("/admin/definition");
+  return audited("definition.moveCategory", [formData], async () => {
+    const { user, access } = await editor();
+    const id = text(formData, "id");
+    const direction = text(formData, "direction") === "up" ? -1 : 1;
+    const categories = await prisma.category.findMany({ where: { isActive: true }, orderBy: { sortOrder: "asc" } });
+    const index = categories.findIndex((category) => category.id === id);
+    const swap = categories[index + direction];
+    if (!swap || index < 0) return;
+    if (definitionError(access)) return;
+    const rights = categoryAccess(access, id);
+    if (!user.isAdmin && !rights.canEditCategory) return;
+    await prisma.$transaction([
+      prisma.category.update({ where: { id }, data: { sortOrder: swap.sortOrder } }),
+      prisma.category.update({ where: { id: swap.id }, data: { sortOrder: categories[index].sortOrder } }),
+    ]);
+    revalidatePath("/admin/definition");
+  });
 }
 
 export async function previewCategoryDelete(id: string) {
@@ -107,14 +113,16 @@ export async function previewCategoryDelete(id: string) {
 }
 
 export async function deleteCategory(id: string) {
-  const { access } = await editor();
-  const blocked = definitionError(access);
-  if (blocked) return { error: blocked };
-  const removed = await prisma.$transaction((tx) => deleteCategoryGraph(tx, id));
-  if (!removed) return { error: "This dimension was not found." };
-  revalidatePath("/admin/definition");
-  revalidatePath("/dimensions");
-  return { error: "" };
+  return audited("definition.deleteCategory", [id], async () => {
+    const { access } = await editor();
+    const blocked = definitionError(access);
+    if (blocked) return { error: blocked };
+    const removed = await prisma.$transaction((tx) => deleteCategoryGraph(tx, id));
+    if (!removed) return { error: "This dimension was not found." };
+    revalidatePath("/admin/definition");
+    revalidatePath("/dimensions");
+    return { error: "" };
+  });
 }
 
 export async function previewFieldDelete(id: string) {
@@ -129,216 +137,224 @@ export async function previewFieldDelete(id: string) {
 }
 
 export async function deleteField(id: string) {
-  const { user, access } = await editor();
-  const blocked = definitionError(access);
-  if (blocked) return { error: blocked };
-  const field = await prisma.fieldDefinition.findUnique({ where: { id }, select: { categoryId: true } });
-  if (!field) return { error: "This attribute was not found." };
-  const rights = categoryAccess(access, field.categoryId);
-  if (!user.isAdmin && !rights.canRemoveFields) return { error: "You cannot delete this attribute." };
-  const removed = await prisma.$transaction((tx) => deleteFieldGraph(tx, id));
-  if (!removed) return { error: "This attribute was not found." };
-  revalidatePath("/admin/definition");
-  revalidatePath("/dimensions");
-  revalidatePath("/admin/lists");
-  return { error: "" };
+  return audited("definition.deleteField", [id], async () => {
+    const { user, access } = await editor();
+    const blocked = definitionError(access);
+    if (blocked) return { error: blocked };
+    const field = await prisma.fieldDefinition.findUnique({ where: { id }, select: { categoryId: true } });
+    if (!field) return { error: "This attribute was not found." };
+    const rights = categoryAccess(access, field.categoryId);
+    if (!user.isAdmin && !rights.canRemoveFields) return { error: "You cannot delete this attribute." };
+    const removed = await prisma.$transaction((tx) => deleteFieldGraph(tx, id));
+    if (!removed) return { error: "This attribute was not found." };
+    revalidatePath("/admin/definition");
+    revalidatePath("/dimensions");
+    revalidatePath("/admin/lists");
+    return { error: "" };
+  });
 }
 
 export async function saveField(formData: FormData) {
-  const { user, access } = await editor();
-  const id = text(formData, "id");
-  const categoryId = text(formData, "categoryId");
-  const blocked = definitionError(access);
-  if (blocked) return { error: blocked };
-  const rights = categoryAccess(access, categoryId);
-  const existing = id
-    ? await prisma.fieldDefinition.findUnique({ where: { id }, include: { values: { take: 1 } } })
-    : null;
-  if (!existing && !user.isAdmin && !rights.canAddFields) return { error: "You cannot add attributes in this dimension." };
-  if (existing && !user.isAdmin && !rights.canEditFields) return { error: "You cannot edit attributes in this dimension." };
+  return audited("definition.saveField", [formData], async () => {
+    const { user, access } = await editor();
+    const id = text(formData, "id");
+    const categoryId = text(formData, "categoryId");
+    const blocked = definitionError(access);
+    if (blocked) return { error: blocked };
+    const rights = categoryAccess(access, categoryId);
+    const existing = id
+      ? await prisma.fieldDefinition.findUnique({ where: { id }, include: { values: { take: 1 } } })
+      : null;
+    if (!existing && !user.isAdmin && !rights.canAddFields) return { error: "You cannot add attributes in this dimension." };
+    if (existing && !user.isAdmin && !rights.canEditFields) return { error: "You cannot edit attributes in this dimension." };
 
-  const key = text(formData, "key");
-  const friendlyName = text(formData, "friendlyName");
-  const keyError = columnKeyError(key);
-  if (keyError) return { error: keyError };
-  if (!friendlyName) return { error: "Display name is required." };
+    const key = text(formData, "key");
+    const friendlyName = text(formData, "friendlyName");
+    const keyError = columnKeyError(key);
+    if (keyError) return { error: keyError };
+    if (!friendlyName) return { error: "Display name is required." };
 
-  const dataType = text(formData, "dataType") as DataTypeName;
-  if (!DATA_TYPES.includes(dataType)) return { error: "Choose an attribute type." };
-  if (existing && existing.dataType !== dataType && existing.values.length > 0) {
-    return { error: "This attribute already has dimension values, so its type cannot be changed. Hide it and add a new attribute." };
-  }
-
-  const listField = dataType === "DROPDOWN" || dataType === "RADIO";
-  const requestedListId = listField ? text(formData, "choiceListId") : "";
-  const choiceList = requestedListId
-    ? await prisma.choiceList.findUnique({ where: { id: requestedListId } })
-    : null;
-  const manualItems =
-    choiceList && choiceList.choiceSource === "MANUAL" && !choiceList.parentListId
-      ? await prisma.choiceListItem.findMany({
-          where: { listId: choiceList.id, isActive: true },
-          orderBy: { sortOrder: "asc" },
-        })
-      : [];
-  if (listField && !choiceList) return { error: "Choose a list." };
-  if (choiceList && !choiceList.isActive && existing?.choiceListId !== choiceList.id) {
-    return { error: "That list is inactive. Activate it before using it on an attribute." };
-  }
-  const choiceSource: ChoiceSource = choiceList?.choiceSource ?? "MANUAL";
-  const options = manualItems.map((option) => ({
-    label: option.label,
-    value: option.value,
-    isDefault: option.isDefault,
-    parentValues: option.parentValues,
-  }));
-  const requestedParent = listField ? text(formData, "parentFieldId") : "";
-  const parentError = requestedParent ? await correlationError(id, requestedParent) : null;
-  if (parentError) return { error: parentError };
-  const activeItems = choiceList
-    ? await prisma.choiceListItem.count({ where: { listId: choiceList.id, isActive: true } })
-    : 0;
-  if (dataType === "RADIO" && choiceList && (activeItems < 2 || activeItems > 5)) {
-    return { error: "A radio attribute needs a list with between 2 and 5 active items." };
-  }
-  if (dataType === "DROPDOWN" && choiceList && activeItems < 1) {
-    return { error: "A list attribute needs a list with at least one active item." };
-  }
-
-  const maxLength = optionalNumber(formData, "maxLength");
-  if (dataType === "TEXT" && (maxLength == null || maxLength < 1 || maxLength > 512)) {
-    return { error: "Text max length is required and must be from 1 to 512." };
-  }
-  if (dataType === "BIG_TEXT" && (maxLength == null || maxLength < 1 || maxLength > 6400)) {
-    return { error: "Big text max length is required and must be from 1 to 6400." };
-  }
-
-  const rules: FieldRules = {
-    dataType,
-    isRequired: formData.get("isRequired") === "on",
-    validationPattern: text(formData, "validationPattern"),
-    useRegex: true,
-    formatExample: text(formData, "formatExample"),
-    maxLength,
-    minValue: optionalNumber(formData, "minValue"),
-    maxValue: optionalNumber(formData, "maxValue"),
-    negativeOk: formData.get("negativeOk") === "on",
-    decimalOk: formData.get("decimalOk") === "on",
-    is24Hour: formData.get("is24Hour") === "on",
-    minDate: text(formData, "minDate"),
-    maxDate: text(formData, "maxDate"),
-    multiple: formData.get("multiple") === "on",
-    options: options.map((option) => ({ label: option.label, value: option.value || option.label })),
-  };
-  const patternError = await compilePattern(rules);
-  if (patternError) return { error: patternError };
-
-  const data: Prisma.FieldDefinitionUncheckedCreateInput = {
-    key,
-    friendlyName,
-    description: text(formData, "description"),
-    dataType: dataType as DataType,
-    categoryId,
-    isRequired: rules.isRequired,
-    isStoreKey: formData.get("isStoreKey") === "on",
-    isActiveFilter: dataType === "CHECKBOX" && formData.get("isActiveFilter") === "on",
-    isCreatedDate: dataType === "DATE" && formData.get("isCreatedDate") === "on",
-    choiceSource,
-    choiceListId: choiceList?.id ?? null,
-    parentFieldId: requestedParent || null,
-    defaultValue: text(formData, "defaultValue"),
-    formatExample: rules.formatExample,
-    validationPattern: rules.validationPattern,
-    useRegex: rules.useRegex,
-    maxLength,
-    minValue: rules.minValue,
-    maxValue: rules.maxValue,
-    negativeOk: rules.negativeOk,
-    decimalOk: rules.decimalOk,
-    numVisible: optionalNumber(formData, "numVisible") ?? 1,
-    multiple: rules.multiple && dataType === "DROPDOWN",
-    is24Hour: rules.is24Hour || dataType !== "TIME",
-    checkboxLabel: text(formData, "checkboxLabel"),
-    minDate: rules.minDate,
-    maxDate: rules.maxDate,
-  };
-
-  const saved = await prisma.$transaction(async (tx) => {
-    if (data.isStoreKey) {
-      await tx.fieldDefinition.updateMany({ data: { isStoreKey: false }, where: { isStoreKey: true } });
+    const dataType = text(formData, "dataType") as DataTypeName;
+    if (!DATA_TYPES.includes(dataType)) return { error: "Choose an attribute type." };
+    if (existing && existing.dataType !== dataType && existing.values.length > 0) {
+      return { error: "This attribute already has dimension values, so its type cannot be changed. Hide it and add a new attribute." };
     }
-    if (data.isActiveFilter) {
-      await tx.fieldDefinition.updateMany({ data: { isActiveFilter: false }, where: { isActiveFilter: true } });
+
+    const listField = dataType === "DROPDOWN" || dataType === "RADIO";
+    const requestedListId = listField ? text(formData, "choiceListId") : "";
+    const choiceList = requestedListId
+      ? await prisma.choiceList.findUnique({ where: { id: requestedListId } })
+      : null;
+    const manualItems =
+      choiceList && choiceList.choiceSource === "MANUAL" && !choiceList.parentListId
+        ? await prisma.choiceListItem.findMany({
+            where: { listId: choiceList.id, isActive: true },
+            orderBy: { sortOrder: "asc" },
+          })
+        : [];
+    if (listField && !choiceList) return { error: "Choose a list." };
+    if (choiceList && !choiceList.isActive && existing?.choiceListId !== choiceList.id) {
+      return { error: "That list is inactive. Activate it before using it on an attribute." };
     }
-    if (data.isCreatedDate) {
-      await tx.fieldDefinition.updateMany({ data: { isCreatedDate: false }, where: { isCreatedDate: true } });
+    const choiceSource: ChoiceSource = choiceList?.choiceSource ?? "MANUAL";
+    const options = manualItems.map((option) => ({
+      label: option.label,
+      value: option.value,
+      isDefault: option.isDefault,
+      parentValues: option.parentValues,
+    }));
+    const requestedParent = listField ? text(formData, "parentFieldId") : "";
+    const parentError = requestedParent ? await correlationError(id, requestedParent) : null;
+    if (parentError) return { error: parentError };
+    const activeItems = choiceList
+      ? await prisma.choiceListItem.count({ where: { listId: choiceList.id, isActive: true } })
+      : 0;
+    if (dataType === "RADIO" && choiceList && (activeItems < 2 || activeItems > 5)) {
+      return { error: "A radio attribute needs a list with between 2 and 5 active items." };
     }
-    const field = existing
-      ? await tx.fieldDefinition.update({ where: { id }, data })
-      : await tx.fieldDefinition.create({
-          data: {
-            ...data,
-            sortOrder:
-              ((await tx.fieldDefinition.aggregate({ where: { categoryId }, _max: { sortOrder: true } }))._max.sortOrder ??
-                -1) + 1,
-          },
+    if (dataType === "DROPDOWN" && choiceList && activeItems < 1) {
+      return { error: "A list attribute needs a list with at least one active item." };
+    }
+
+    const maxLength = optionalNumber(formData, "maxLength");
+    if (dataType === "TEXT" && (maxLength == null || maxLength < 1 || maxLength > 512)) {
+      return { error: "Text max length is required and must be from 1 to 512." };
+    }
+    if (dataType === "BIG_TEXT" && (maxLength == null || maxLength < 1 || maxLength > 6400)) {
+      return { error: "Big text max length is required and must be from 1 to 6400." };
+    }
+
+    const rules: FieldRules = {
+      dataType,
+      isRequired: formData.get("isRequired") === "on",
+      validationPattern: text(formData, "validationPattern"),
+      useRegex: true,
+      formatExample: text(formData, "formatExample"),
+      maxLength,
+      minValue: optionalNumber(formData, "minValue"),
+      maxValue: optionalNumber(formData, "maxValue"),
+      negativeOk: formData.get("negativeOk") === "on",
+      decimalOk: formData.get("decimalOk") === "on",
+      is24Hour: formData.get("is24Hour") === "on",
+      minDate: text(formData, "minDate"),
+      maxDate: text(formData, "maxDate"),
+      multiple: formData.get("multiple") === "on",
+      options: options.map((option) => ({ label: option.label, value: option.value || option.label })),
+    };
+    const patternError = await compilePattern(rules);
+    if (patternError) return { error: patternError };
+
+    const data: Prisma.FieldDefinitionUncheckedCreateInput = {
+      key,
+      friendlyName,
+      description: text(formData, "description"),
+      dataType: dataType as DataType,
+      categoryId,
+      isRequired: rules.isRequired,
+      isStoreKey: formData.get("isStoreKey") === "on",
+      isActiveFilter: dataType === "CHECKBOX" && formData.get("isActiveFilter") === "on",
+      isCreatedDate: dataType === "DATE" && formData.get("isCreatedDate") === "on",
+      choiceSource,
+      choiceListId: choiceList?.id ?? null,
+      parentFieldId: requestedParent || null,
+      defaultValue: text(formData, "defaultValue"),
+      formatExample: rules.formatExample,
+      validationPattern: rules.validationPattern,
+      useRegex: rules.useRegex,
+      maxLength,
+      minValue: rules.minValue,
+      maxValue: rules.maxValue,
+      negativeOk: rules.negativeOk,
+      decimalOk: rules.decimalOk,
+      numVisible: optionalNumber(formData, "numVisible") ?? 1,
+      multiple: rules.multiple && dataType === "DROPDOWN",
+      is24Hour: rules.is24Hour || dataType !== "TIME",
+      checkboxLabel: text(formData, "checkboxLabel"),
+      minDate: rules.minDate,
+      maxDate: rules.maxDate,
+    };
+
+    const saved = await prisma.$transaction(async (tx) => {
+      if (data.isStoreKey) {
+        await tx.fieldDefinition.updateMany({ data: { isStoreKey: false }, where: { isStoreKey: true } });
+      }
+      if (data.isActiveFilter) {
+        await tx.fieldDefinition.updateMany({ data: { isActiveFilter: false }, where: { isActiveFilter: true } });
+      }
+      if (data.isCreatedDate) {
+        await tx.fieldDefinition.updateMany({ data: { isCreatedDate: false }, where: { isCreatedDate: true } });
+      }
+      const field = existing
+        ? await tx.fieldDefinition.update({ where: { id }, data })
+        : await tx.fieldDefinition.create({
+            data: {
+              ...data,
+              sortOrder:
+                ((await tx.fieldDefinition.aggregate({ where: { categoryId }, _max: { sortOrder: true } }))._max.sortOrder ??
+                  -1) + 1,
+            },
+          });
+      await tx.fieldOption.deleteMany({ where: { fieldId: field.id } });
+      if (options.length) {
+        await tx.fieldOption.createMany({
+          data: options.map((option, index) => ({
+            fieldId: field.id,
+            label: option.label,
+            value: option.value || option.label,
+            parentValues: option.parentValues ?? "",
+            isDefault: Boolean(option.isDefault),
+            sortOrder: index,
+          })),
         });
-    await tx.fieldOption.deleteMany({ where: { fieldId: field.id } });
-    if (options.length) {
-      await tx.fieldOption.createMany({
-        data: options.map((option, index) => ({
-          fieldId: field.id,
-          label: option.label,
-          value: option.value || option.label,
-          parentValues: option.parentValues ?? "",
-          isDefault: Boolean(option.isDefault),
-          sortOrder: index,
-        })),
-      });
-    }
-    return field;
-  });
+      }
+      return field;
+    });
 
-  revalidatePath("/admin/definition");
-  revalidatePath("/dimensions");
-  if (!existing) redirect(`/admin/definition?added=${saved.id}&category=${categoryId}`);
-  return { error: "" };
+    revalidatePath("/admin/definition");
+    revalidatePath("/dimensions");
+    if (!existing) redirect(`/admin/definition?added=${saved.id}&category=${categoryId}`);
+    return { error: "" };
+  });
 }
 
 export async function setFieldActive(formData: FormData) {
-  const { user, access } = await editor();
-  const id = text(formData, "id");
-  const active = text(formData, "active") === "1";
-  const field = await prisma.fieldDefinition.findUnique({ where: { id } });
-  if (!field || definitionError(access)) return;
-  const rights = categoryAccess(access, field.categoryId);
-  if (active && !user.isAdmin && !rights.canAddFields) return;
-  if (!active && !user.isAdmin && !rights.canRemoveFields) return;
-  await prisma.fieldDefinition.update({ where: { id }, data: { isActive: active } });
-  revalidatePath("/admin/definition");
-  revalidatePath("/dimensions");
+  return audited("definition.setFieldActive", [formData], async () => {
+    const { user, access } = await editor();
+    const id = text(formData, "id");
+    const active = text(formData, "active") === "1";
+    const field = await prisma.fieldDefinition.findUnique({ where: { id } });
+    if (!field || definitionError(access)) return;
+    const rights = categoryAccess(access, field.categoryId);
+    if (active && !user.isAdmin && !rights.canAddFields) return;
+    if (!active && !user.isAdmin && !rights.canRemoveFields) return;
+    await prisma.fieldDefinition.update({ where: { id }, data: { isActive: active } });
+    revalidatePath("/admin/definition");
+    revalidatePath("/dimensions");
+  });
 }
 
 export async function moveField(formData: FormData) {
-  const { user, access } = await editor();
-  const id = text(formData, "id");
-  const direction = text(formData, "direction") === "up" ? -1 : 1;
-  const field = await prisma.fieldDefinition.findUnique({ where: { id } });
-  if (!field || definitionError(access)) return;
-  const rights = categoryAccess(access, field.categoryId);
-  if (!user.isAdmin && !rights.canEditCategory) return;
-  const fields = await prisma.fieldDefinition.findMany({
-    where: { categoryId: field.categoryId },
-    orderBy: { sortOrder: "asc" },
+  return audited("definition.moveField", [formData], async () => {
+    const { user, access } = await editor();
+    const id = text(formData, "id");
+    const direction = text(formData, "direction") === "up" ? -1 : 1;
+    const field = await prisma.fieldDefinition.findUnique({ where: { id } });
+    if (!field || definitionError(access)) return;
+    const rights = categoryAccess(access, field.categoryId);
+    if (!user.isAdmin && !rights.canEditCategory) return;
+    const fields = await prisma.fieldDefinition.findMany({
+      where: { categoryId: field.categoryId },
+      orderBy: { sortOrder: "asc" },
+    });
+    const index = fields.findIndex((item) => item.id === id);
+    const swap = fields[index + direction];
+    if (!swap) return;
+    await prisma.$transaction([
+      prisma.fieldDefinition.update({ where: { id }, data: { sortOrder: swap.sortOrder } }),
+      prisma.fieldDefinition.update({ where: { id: swap.id }, data: { sortOrder: fields[index].sortOrder } }),
+    ]);
+    revalidatePath("/admin/definition");
   });
-  const index = fields.findIndex((item) => item.id === id);
-  const swap = fields[index + direction];
-  if (!swap) return;
-  await prisma.$transaction([
-    prisma.fieldDefinition.update({ where: { id }, data: { sortOrder: swap.sortOrder } }),
-    prisma.fieldDefinition.update({ where: { id: swap.id }, data: { sortOrder: fields[index].sortOrder } }),
-  ]);
-  revalidatePath("/admin/definition");
 }
 
 export async function loadStoreTargets(fieldId: string) {
@@ -348,50 +364,76 @@ export async function loadStoreTargets(fieldId: string) {
 }
 
 export async function applyDefaultToStores(fieldId: string, locationIds: string[], raw: string) {
-  const { user, access } = await editor();
-  const blocked = definitionError(access);
-  if (blocked) return { error: blocked, applied: 0 };
-  const field = await prisma.fieldDefinition.findUnique({ where: { id: fieldId }, include: { options: true } });
-  if (!field) return { error: "This attribute was not found.", applied: 0 };
-  if (field.isCreatedDate) return { error: `${field.friendlyName} is filled in when the dimension is added.`, applied: 0 };
-  const rights = categoryAccess(access, field.categoryId);
-  if (!user.isAdmin && !rights.canEditFields) return { error: "You cannot update this attribute.", applied: 0 };
+  return audited("definition.applyDefaultToStores", [fieldId, locationIds, raw], async () => {
+    const { user, access } = await editor();
+    const blocked = definitionError(access);
+    if (blocked) return { error: blocked, applied: 0 };
+    const field = await prisma.fieldDefinition.findUnique({ where: { id: fieldId }, include: { options: true } });
+    if (!field) return { error: "This attribute was not found.", applied: 0 };
+    if (field.isCreatedDate) return { error: `${field.friendlyName} is filled in when the dimension is added.`, applied: 0 };
+    const rights = categoryAccess(access, field.categoryId);
+    if (!user.isAdmin && !rights.canEditFields) return { error: "You cannot update this attribute.", applied: 0 };
 
-  const rules = rulesFromField(field);
-  if (field.choiceListId) {
-    const list = await prisma.choiceList.findUnique({ where: { id: field.choiceListId }, select: { parentListId: true } });
-    const chosen = raw.trim();
-    if (list?.parentListId) {
-      if (chosen) {
-        const found = await prisma.choiceListItem.findFirst({
-          where: { listId: field.choiceListId, isActive: true, value: chosen },
-          select: { label: true, value: true },
-        });
-        if (!found) return { error: "Choose a value from the list.", applied: 0 };
-        rules.options = [found];
+    const rules = rulesFromField(field);
+    if (field.choiceListId) {
+      const list = await prisma.choiceList.findUnique({ where: { id: field.choiceListId }, select: { parentListId: true } });
+      const chosen = raw.trim();
+      if (list?.parentListId) {
+        if (chosen) {
+          const found = await prisma.choiceListItem.findFirst({
+            where: { listId: field.choiceListId, isActive: true, value: chosen },
+            select: { label: true, value: true },
+          });
+          if (!found) return { error: "Choose a value from the list.", applied: 0 };
+          rules.options = [found];
+        }
+      } else {
+        rules.options = await choicesForList(field.choiceListId, null);
       }
-    } else {
-      rules.options = await choicesForList(field.choiceListId, null);
     }
-  }
-  const invalid = await validateValue(rules, raw);
-  if (invalid) return { error: invalid, applied: 0 };
+    const invalid = await validateValue(rules, raw);
+    if (invalid) return { error: invalid, applied: 0 };
 
-  const ids = [...new Set(locationIds.filter(Boolean))];
-  if (!ids.length) return { error: "Choose at least one dimension.", applied: 0 };
-  const found = await prisma.location.findMany({ where: { id: { in: ids }, isActive: true }, select: { id: true } });
-  if (found.length !== ids.length) return { error: "One of the selected dimensions is no longer available.", applied: 0 };
+    const ids = [...new Set(locationIds.filter(Boolean))];
+    if (!ids.length) return { error: "Choose at least one dimension.", applied: 0 };
+    const found = await prisma.location.findMany({ where: { id: { in: ids }, isActive: true }, select: { id: true } });
+    if (found.length !== ids.length) return { error: "One of the selected dimensions is no longer available.", applied: 0 };
 
-  const stored = inputToStored(field, raw);
-  await prisma.$transaction(
-    found.map((location) =>
-      prisma.fieldValue.upsert({
-        where: { locationId_fieldId: { locationId: location.id, fieldId: field.id } },
-        update: stored,
-        create: { locationId: location.id, fieldId: field.id, ...stored },
-      }),
-    ),
-  );
-  revalidatePath("/dimensions");
-  return { error: "", applied: found.length };
+    if (field.isStoreKey && raw.trim() && found.length > 1) {
+      return { error: `${field.friendlyName} is a unique identifier, so one value cannot be applied to several dimensions.`, applied: 0 };
+    }
+
+    // Bulk updates are recorded in the changelog and run workflows like any other edit,
+    // so the changelog, notifications, and AI knowledge stay complete.
+    const stored = inputToStored(field, raw);
+    const newValue = displayRaw(field, raw, rules.options);
+    const changed = await prisma.$transaction(async (tx) => {
+      const previous = await tx.fieldValue.findMany({ where: { fieldId: field.id, locationId: { in: found.map((row) => row.id) } } });
+      const result: { locationId: string; change: SavedChange }[] = [];
+      for (const location of found) {
+        const oldValue = displayStored(field, previous.find((value) => value.locationId === location.id), rules.options);
+        await tx.fieldValue.upsert({
+          where: { locationId_fieldId: { locationId: location.id, fieldId: field.id } },
+          update: stored,
+          create: { locationId: location.id, fieldId: field.id, ...stored },
+        });
+        if (oldValue === newValue) continue;
+        const row = await tx.fieldChange.create({
+          data: { locationId: location.id, fieldId: field.id, userId: user.id, oldValue, newValue },
+        });
+        result.push({
+          locationId: location.id,
+          change: { id: row.id, fieldId: field.id, categoryId: field.categoryId, attribute: field.friendlyName, oldValue, newValue },
+        });
+      }
+      return result;
+    });
+    for (const item of changed) {
+      await runWorkflows({ locationId: item.locationId, userId: user.id, userName: user.name, created: false, changes: [item.change] });
+    }
+    revalidatePath("/dimensions");
+    revalidatePath("/changelog");
+    revalidatePath("/dashboard");
+    return { error: "", applied: found.length };
+  });
 }

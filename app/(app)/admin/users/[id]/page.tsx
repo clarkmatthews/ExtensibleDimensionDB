@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
-import { savePermissions, saveUser, saveUserWorkflowSteps, setUserActive } from "@/lib/access-actions";
+import { savePermissions, saveUser, saveUserWorkflowSteps, setUserActive, signOutEverywhere } from "@/lib/access-actions";
 import { PASSWORD_RULES } from "@/lib/passwords";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -43,7 +43,13 @@ export default async function UserPage({
   if (!account) notFound();
   const fieldPerms = await prisma.fieldPermission.findMany({ where: { subjectType: "USER", subjectId: id } });
   const memberGroups = new Set(account.groups.map((membership) => membership.groupId));
+  const activeSessions = await prisma.session.findMany({
+    where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { lastSeenAt: "desc" },
+    select: { id: true, lastSeenAt: true, userAgent: true },
+  });
   const saved =
+    query.saved === "sessions" ? "Signed out everywhere." :
     query.saved === "account" ? "Account saved." : query.saved === "permissions" ? "Permissions saved." : query.saved === "workflows" ? "Workflow assignment saved." : "";
 
   return (
@@ -124,6 +130,31 @@ export default async function UserPage({
           ) : null}
         </div>
       </form>
+
+      <section className="panel space-y-3 p-4">
+        <h2 className="flex items-center text-lg font-semibold">
+          Signed-in sessions
+          <HelpTip text="Each browser where this person is signed in. Changing the password or disabling the account signs them out everywhere. Sign out everywhere does the same without changing anything else." />
+        </h2>
+        {activeSessions.length === 0 ? <p className="text-sm text-muted">Not signed in anywhere.</p> : (
+          <ul className="space-y-1 text-sm">
+            {activeSessions.map((session) => (
+              <li key={session.id}>
+                <span className="text-muted">Last active {session.lastSeenAt.toLocaleString()}</span>
+                {session.userAgent ? <span className="block truncate text-xs text-muted">{session.userAgent}</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        {canEdit && activeSessions.length ? (
+          <form action={signOutEverywhere}>
+            <input type="hidden" name="id" value={account.id} />
+            <button className="btn-quiet" type="submit">
+              {account.id === actor.id ? "Sign out my other sessions" : "Sign out everywhere"}
+            </button>
+          </form>
+        ) : null}
+      </section>
 
       {canEditPermissions ? (
       <form action={savePermissions} className="space-y-4">

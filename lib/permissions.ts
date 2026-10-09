@@ -191,6 +191,36 @@ export function fieldAccess(ctx: AccessContext, fieldId: string, categoryId: str
   return { canView: false, canUpdate: false };
 }
 
+/** True when this person may read the value of an attribute: the same test the record form uses. */
+export function canSeeValue(ctx: AccessContext, fieldId: string, categoryId: string) {
+  if (ctx.user.isAdmin) return true;
+  return categoryAccess(ctx, categoryId).canViewData && fieldAccess(ctx, fieldId, categoryId).canView;
+}
+
+/** Loads access for many users at once, sharing the permission tables between them. */
+export async function loadAccessForUsers(userIds: string[]): Promise<Map<string, AccessContext>> {
+  const unique = [...new Set(userIds)].filter(Boolean);
+  const result = new Map<string, AccessContext>();
+  if (!unique.length) return result;
+  const [users, categoryPerms, fieldPerms, modulePerms] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: unique }, isActive: true },
+      include: { groups: { include: { group: true } } },
+    }),
+    prisma.categoryPermission.findMany(),
+    prisma.fieldPermission.findMany(),
+    prisma.modulePermission.findMany(),
+  ]);
+  for (const user of users) {
+    const groupIds = user.groups.map((membership) => membership.groupId);
+    const departmentIds = [
+      ...new Set(user.groups.map((membership) => membership.group.departmentId).filter((id): id is string => Boolean(id))),
+    ];
+    result.set(user.id, { user, groupIds, departmentIds, categoryPerms, fieldPerms, modulePerms });
+  }
+  return result;
+}
+
 export function canManageStructure(user: { isAdmin: boolean; canDefineWorkflows: boolean }) {
   return user.isAdmin || user.canDefineWorkflows;
 }

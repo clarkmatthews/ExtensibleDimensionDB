@@ -7,7 +7,7 @@ import {
   noteSecretFailure,
   outsideDateRange,
   recordShareRequest,
-  secretsMatch,
+  secretMatchesHash,
   shareToXml,
   sourceIp,
 } from "@/lib/api-share";
@@ -31,15 +31,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   const ip = sourceIp(request);
   const format = endpoint.format;
 
-  if (await blockedIpUntil(ip)) {
+  if (await blockedIpUntil(endpoint.id, ip)) {
     await recordShareRequest(endpoint.id, ip, 429, "blocked for 1 hour");
     return errorBody(format, 429, "This address is blocked for 1 hour after repeated secret failures.");
   }
 
   const provided = bearerSecret(request);
-  const secretAccepted = endpoint.secretOptional && !provided ? true : secretsMatch(provided, endpoint.secret);
+  const secretAccepted = endpoint.secretOptional && !provided ? true : secretMatchesHash(provided, endpoint.secretHash);
   if (!secretAccepted) {
-    const failure = await noteSecretFailure(ip);
+    const failure = await noteSecretFailure(endpoint.id, ip);
     if (failure.blocked) {
       await recordShareRequest(endpoint.id, ip, 429, "blocked for 1 hour");
       return errorBody(format, 429, "This address is blocked for 1 hour after repeated secret failures.");
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   }
 
   const payload = await buildShare(endpoint.id);
-  await clearSecretFailures(ip);
+  await clearSecretFailures(endpoint.id, ip);
   await recordShareRequest(endpoint.id, ip, 200, "success");
   if (format === "XML") {
     return new NextResponse(shareToXml(payload), {

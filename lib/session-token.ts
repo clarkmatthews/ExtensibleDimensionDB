@@ -8,7 +8,9 @@ const KNOWN_SECRET_HASHES = new Set([
 ]);
 const KNOWN_SECRETS = new Set(["replace-with-a-long-random-string"]);
 
-type SessionPayload = { userId: string; exp: number };
+type SessionPayload = { sid: string; userId: string; exp: number };
+
+export const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 12;
 
 export function assertAuthSecret() {
   secret();
@@ -27,14 +29,19 @@ function sign(body: string) {
   return createHmac("sha256", secret()).update(body).digest("base64url");
 }
 
-export function createSessionToken(userId: string) {
+export function createSessionToken(sessionId: string, userId: string, expiresAt: Date) {
   const body = Buffer.from(
-    JSON.stringify({ userId, exp: Date.now() + 1000 * 60 * 60 * 24 * 12 } satisfies SessionPayload),
+    JSON.stringify({ sid: sessionId, userId, exp: expiresAt.getTime() } satisfies SessionPayload),
   ).toString("base64url");
   return `${body}.${sign(body)}`;
 }
 
+/** Verifies the signature and expiry only. The session row is checked by getCurrentUser. */
 export function readSessionToken(token: string | undefined | null): string | null {
+  return readSessionPayload(token)?.userId ?? null;
+}
+
+export function readSessionPayload(token: string | undefined | null): SessionPayload | null {
   if (!token) return null;
   const [body, signature] = token.split(".");
   if (!body || !signature) return null;
@@ -44,8 +51,8 @@ export function readSessionToken(token: string | undefined | null): string | nul
   if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString()) as SessionPayload;
-    if (!payload.userId || payload.exp < Date.now()) return null;
-    return payload.userId;
+    if (!payload.sid || !payload.userId || payload.exp < Date.now()) return null;
+    return payload;
   } catch {
     return null;
   }

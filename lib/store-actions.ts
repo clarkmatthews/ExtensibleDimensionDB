@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, categoryAccess, fieldAccess, loadAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
@@ -10,6 +11,22 @@ import { defaultInput, displayRaw, displayStored, inputToStored, localDateInput,
 import { choicesForParent } from "@/lib/list-correlation";
 import { choicesForList } from "@/lib/list-items";
 import { runWorkflows, startManualProcess, type SavedChange } from "@/lib/workflow";
+
+class IdentifierTakenError extends Error {
+  constructor(readonly attribute: string) {
+    super(`${attribute} must be unique.`);
+  }
+}
+
+type ValueReader = Pick<Prisma.TransactionClient, "fieldValue">;
+
+async function identifierTaken(db: ValueReader, fieldId: string, value: string, locationId: string) {
+  const clash = await db.fieldValue.findFirst({
+    where: { fieldId, valueText: value, ...(locationId ? { locationId: { not: locationId } } : {}) },
+    select: { id: true },
+  });
+  return Boolean(clash);
+}
 
 async function actor() {
   const user = await getCurrentUser();
@@ -71,24 +88,12 @@ export async function saveStore(formData: FormData) {
   }
   if (errors.length) return { error: errors[0] };
 
-  for (const write of writes) {
-    if (!write.field.isStoreKey) continue;
-    const code = write.raw.trim();
-    if (!code) continue;
-    const clash = await prisma.fieldValue.findFirst({
-      where: {
-        fieldId: write.field.id,
-        valueText: code,
-        ...(locationId ? { locationId: { not: locationId } } : {}),
-      },
-    });
-    if (clash) return { error: `${write.field.friendlyName} must be unique.` };
+  const keyWrites = writes.filter((write) => write.field.isStoreKey && write.raw.trim());
+  for (const write of keyWrites) {
+    if (await identifierTaken(prisma, write.field.id, write.raw.trim(), locationId)) {
+      return { error: `${write.field.friendlyName} must be unique.` };
+    }
   }
-
-  const previousValues = locationId ? await prisma.fieldValue.findMany({ where: { locationId } }) : [];
-  const location = locationId
-    ? await prisma.location.update({ where: { id: locationId }, data: { updatedAt: new Date() } })
-    : await prisma.location.create({ data: {} });
 
   if (!locationId) {
     for (const field of fields) {
@@ -102,45 +107,61 @@ export async function saveStore(formData: FormData) {
     }
   }
 
-  for (const createdField of fields.filter((field) => field.isCreatedDate && field.dataType === "DATE")) {
-    const existingCreated = await prisma.fieldValue.findUnique({
-      where: { locationId_fieldId: { locationId: location.id, fieldId: createdField.id } },
+  // Everything below is one transaction: the record, its values, and its changelog rows
+  // are saved together or not at all. Unique identifiers are re-checked under a lock so
+  // two people saving at the same moment cannot both claim the same identifier.
+  let saved: { locationId: string; changes: SavedChange[] };
+  try {
+    saved = await prisma.$transaction(async (tx) => {
+      for (const write of keyWrites) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`identifier:${write.field.id}`}))`;
+        if (await identifierTaken(tx, write.field.id, write.raw.trim(), locationId)) {
+          throw new IdentifierTakenError(write.field.friendlyName);
+        }
+      }
+      const previousValues = locationId ? await tx.fieldValue.findMany({ where: { locationId } }) : [];
+      const location = locationId
+        ? await tx.location.update({ where: { id: locationId }, data: { updatedAt: new Date() } })
+        : await tx.location.create({ data: {} });
+      const pending = [...writes];
+      for (const createdField of fields.filter((field) => field.isCreatedDate && field.dataType === "DATE")) {
+        const existingCreated = await tx.fieldValue.findUnique({
+          where: { locationId_fieldId: { locationId: location.id, fieldId: createdField.id } },
+        });
+        if (!existingCreated) pending.push({ field: createdField, raw: localDateInput(location.createdAt) });
+      }
+      const changes: SavedChange[] = [];
+      for (const write of pending) {
+        const previous = previousValues.find((value) => value.fieldId === write.field.id);
+        const oldValue = displayStored(write.field, previous, write.options);
+        const newValue = displayRaw(write.field, write.raw, write.options);
+        const stored = inputToStored(write.field, write.raw);
+        await tx.fieldValue.upsert({
+          where: { locationId_fieldId: { locationId: location.id, fieldId: write.field.id } },
+          update: stored,
+          create: { locationId: location.id, fieldId: write.field.id, ...stored },
+        });
+        if (oldValue === newValue) continue;
+        const row = await tx.fieldChange.create({
+          data: { locationId: location.id, fieldId: write.field.id, userId: user.id, oldValue, newValue },
+        });
+        changes.push({
+          id: row.id,
+          fieldId: write.field.id,
+          categoryId: write.field.categoryId,
+          attribute: write.field.friendlyName,
+          oldValue,
+          newValue,
+        });
+      }
+      return { locationId: location.id, changes };
     });
-    if (!existingCreated) {
-      writes.push({ field: createdField, raw: localDateInput(location.createdAt) });
-    }
+  } catch (error) {
+    if (error instanceof IdentifierTakenError) return { error: `${error.attribute} must be unique.` };
+    throw error;
   }
-
-  const changes: SavedChange[] = [];
-  for (const write of writes) {
-    const previous = previousValues.find((value) => value.fieldId === write.field.id);
-    const oldValue = displayStored(write.field, previous, write.options);
-    const newValue = displayRaw(write.field, write.raw, write.options);
-    const stored = inputToStored(write.field, write.raw);
-    await prisma.fieldValue.upsert({
-      where: { locationId_fieldId: { locationId: location.id, fieldId: write.field.id } },
-      update: stored,
-      create: { locationId: location.id, fieldId: write.field.id, ...stored },
-    });
-    if (oldValue === newValue) continue;
-    const row = await prisma.fieldChange.create({
-      data: {
-        locationId: location.id,
-        fieldId: write.field.id,
-        userId: user.id,
-        oldValue,
-        newValue,
-      },
-    });
-    changes.push({
-      id: row.id,
-      fieldId: write.field.id,
-      categoryId: write.field.categoryId,
-      attribute: write.field.friendlyName,
-      oldValue,
-      newValue,
-    });
-  }
+  const location = { id: saved.locationId };
+  const changes = saved.changes;
 
   await runWorkflows({
     locationId: location.id,

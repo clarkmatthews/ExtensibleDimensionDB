@@ -56,6 +56,7 @@ enum AppModule {
   ACCESS
   WORKFLOWS
   NOTICES
+  AUDIT
 }
 
 enum ApiFormat {
@@ -150,6 +151,36 @@ model User {
   workflowSteps      WorkflowStep[] @relation("WorkflowAssignee")
   fieldChanges       FieldChange[]
   workflowRecipients WorkflowRecipient[]
+  sessions           Session[]
+  auditEntries       AuditLog[]
+}
+
+/// One signed-in browser. Signing out revokes it; a password change or deactivation revokes all of them.
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  lastSeenAt DateTime @default(now())
+  userAgent String    @default("")
+
+  @@index([userId])
+}
+
+/// Administrative changes: definitions, lists, people, permissions, workflows, and settings.
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  detail    Json
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([action])
 }
 
 model UserGroup {
@@ -468,7 +499,10 @@ model ApiEndpoint {
   id          String                @id @default(uuid())
   name        String
   description String                @default("")
-  secret         String
+  /// SHA-256 of the secret. The secret itself is shown once, when it is created, and never stored.
+  secretHash     String
+  /// Last four characters of the secret, so an administrator can tell keys apart.
+  secretHint     String    @default("")
   secretOptional Boolean   @default(false)
   format         ApiFormat @default(JSON)
   validFrom   DateTime?             @db.Date
@@ -513,7 +547,8 @@ model ApiRequestLog {
 }
 
 model ApiIpBlock {
-  sourceIp     String    @id
+  /// Endpoint id and caller address, so one caller cannot block other callers or other endpoints.
+  key          String    @id
   failureCount Int       @default(0)
   blockedUntil DateTime?
   updatedAt    DateTime  @updatedAt

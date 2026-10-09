@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
-import { canViewModule, fieldAccess, loadAccess } from "@/lib/permissions";
+import { canSeeValue, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
@@ -58,7 +58,7 @@ export default async function ChangelogPage({
         orderBy: { createdAt: "desc" },
         take: 200,
       });
-  const visible = rows.filter((row) => fieldAccess(access, row.fieldId, row.field.categoryId).canView || user.isAdmin);
+  const visible = rows.filter((row) => canSeeValue(access, row.fieldId, row.field.categoryId));
   const locationIdsOnPage = [...new Set(visible.map((row) => row.locationId))];
   const labels = new Map(
     (locationIdsOnPage.length
