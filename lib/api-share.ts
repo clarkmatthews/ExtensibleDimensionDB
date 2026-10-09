@@ -1,8 +1,11 @@
-import { timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import type { NextRequest } from "next/server";
-import { clientAddress } from "@/lib/client-address";
+import { clientAddress, UNKNOWN_CLIENT } from "@/lib/client-address";
 import { prisma } from "@/lib/prisma";
 import { storedToDisplay, type DefinedField } from "@/lib/values";
+
+/** Holds a newly issued secret for two minutes so API Config can show it once. */
+export const NEW_SECRET_COOKIE = "new_share_secret";
 
 export type ShareChoice = { label: string; value: string };
 
@@ -34,9 +37,16 @@ export function sourceIp(request: NextRequest) {
   return clientAddress(request.headers);
 }
 
-export function secretsMatch(provided: string, expected: string) {
-  const left = Buffer.from(provided);
-  const right = Buffer.from(expected);
+/** SHA-256 hex of a share secret. Secrets are 32 random bytes, so a fast hash is enough. */
+export function hashShareSecret(secret: string) {
+  return createHash("sha256").update(secret, "utf8").digest("hex");
+}
+
+/** Compares a presented secret with the stored hash in constant time. */
+export function secretMatchesHash(provided: string, expectedHash: string) {
+  if (!provided || !expectedHash) return false;
+  const left = Buffer.from(hashShareSecret(provided), "hex");
+  const right = Buffer.from(expectedHash, "hex");
   if (left.length !== right.length || left.length === 0) return false;
   return timingSafeEqual(left, right);
 }
@@ -168,35 +178,44 @@ export function shareToXml(payload: SharePayload) {
 const FAILURE_LIMIT = 5;
 const BLOCK_MS = 60 * 60 * 1000;
 
-export async function blockedIpUntil(sourceIp: string) {
-  const row = await prisma.apiIpBlock.findUnique({ where: { sourceIp } });
+/**
+ * Failures are counted per endpoint and caller, so a bad caller cannot block anyone else.
+ * When the caller's address is unknown (TRUST_PROXY not set), nothing is blocked: every
+ * remote caller would share that bucket. The 256-bit secret is what protects the endpoint;
+ * the block only cuts noise from a misconfigured client.
+ */
+function failureKey(endpointId: string, sourceIp: string) {
+  return sourceIp === UNKNOWN_CLIENT ? null : `${endpointId}|${sourceIp}`;
+}
+
+export async function blockedIpUntil(endpointId: string, sourceIp: string) {
+  const key = failureKey(endpointId, sourceIp);
+  if (!key) return null;
+  const row = await prisma.apiIpBlock.findUnique({ where: { key } });
   if (!row?.blockedUntil || row.blockedUntil.getTime() <= Date.now()) return null;
   return row.blockedUntil;
 }
 
-export async function noteSecretFailure(sourceIp: string) {
+export async function noteSecretFailure(endpointId: string, sourceIp: string) {
+  const key = failureKey(endpointId, sourceIp);
+  if (!key) return { blocked: false, count: 0 };
   const now = new Date();
-  const existing = await prisma.apiIpBlock.findUnique({ where: { sourceIp } });
+  const existing = await prisma.apiIpBlock.findUnique({ where: { key } });
   const blockExpired = Boolean(existing?.blockedUntil && existing.blockedUntil.getTime() <= now.getTime());
   const count = !existing || blockExpired ? 1 : existing.failureCount + 1;
   const blocked = count > FAILURE_LIMIT;
+  const blockedUntil = blocked ? new Date(now.getTime() + BLOCK_MS) : null;
   await prisma.apiIpBlock.upsert({
-    where: { sourceIp },
-    create: {
-      sourceIp,
-      failureCount: count,
-      blockedUntil: blocked ? new Date(now.getTime() + BLOCK_MS) : null,
-    },
-    update: {
-      failureCount: count,
-      blockedUntil: blocked ? new Date(now.getTime() + BLOCK_MS) : null,
-    },
+    where: { key },
+    create: { key, failureCount: count, blockedUntil },
+    update: { failureCount: count, blockedUntil },
   });
   return { blocked, count };
 }
 
-export async function clearSecretFailures(sourceIp: string) {
-  await prisma.apiIpBlock.deleteMany({ where: { sourceIp } });
+export async function clearSecretFailures(endpointId: string, sourceIp: string) {
+  const key = failureKey(endpointId, sourceIp);
+  if (key) await prisma.apiIpBlock.deleteMany({ where: { key } });
 }
 
 export async function recordShareRequest(endpointId: string, sourceIp: string, status: number, result: string) {

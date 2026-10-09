@@ -4,15 +4,22 @@ import { compare } from "bcryptjs";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { clientAddress } from "@/lib/client-address";
-import { clearLoginFailures, loginBlocked, noteLoginFailure } from "@/lib/login-throttle";
+import { clearLoginFailures, loginBlockedUntil, noteLoginFailure } from "@/lib/login-throttle";
+import { writeAudit } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { clearSession, setSession } from "@/lib/session";
+
+function lockedUrl(until: Date) {
+  const minutes = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
+  return `/login?error=locked&wait=${minutes}`;
+}
 
 export async function login(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const address = clientAddress(await headers());
-  if (await loginBlocked(email, address)) redirect("/login?error=locked");
+  const blockedUntil = await loginBlockedUntil(email, address);
+  if (blockedUntil) redirect(lockedUrl(blockedUntil));
   let user;
   try {
     user = await prisma.user.findUnique({ where: { email } });
@@ -23,10 +30,11 @@ export async function login(formData: FormData) {
   }
   if (!user || !user.isActive || !(await compare(password, user.passwordHash))) {
     const locked = await noteLoginFailure(email, address);
-    redirect(locked ? "/login?error=locked" : "/login?error=1");
+    redirect(locked ? lockedUrl(locked) : "/login?error=1");
   }
   await clearLoginFailures(email, address);
   await setSession(user.id);
+  await writeAudit("session.signIn", { address }, user.id);
   redirect("/dashboard");
 }
 

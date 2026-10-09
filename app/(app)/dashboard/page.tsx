@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
-import { canEditModule, canViewModule, firstModuleHref, loadAccess } from "@/lib/permissions";
+import { canEditModule, canSeeValue, canViewModule, firstModuleHref, loadAccess } from "@/lib/permissions";
 import { taskAction } from "@/lib/store-actions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -103,7 +103,9 @@ export default async function DashboardPage({
             <p className="mt-1 text-sm text-muted">Assigned to {task.assigneeGroup.name}</p>
             {task.fieldChange ? (
               <p className="mt-2 text-sm">
-                {task.fieldChange.field.friendlyName}: {task.fieldChange.oldValue || "blank"} → {task.fieldChange.newValue || "blank"}
+                {canSeeValue(access, task.fieldChange.fieldId, task.fieldChange.field.categoryId)
+                  ? <>{task.fieldChange.field.friendlyName}: {task.fieldChange.oldValue || "blank"} → {task.fieldChange.newValue || "blank"}</>
+                  : "A change to an attribute you cannot view opened this action."}
                 <span className="text-muted"> · {task.fieldChange.user.name} · {task.fieldChange.createdAt.toLocaleString()}</span>
               </p>
             ) : null}
@@ -151,10 +153,17 @@ export default async function DashboardPage({
         {recent.length === 0 ? <p className="text-sm text-muted">No change notifications.</p> : null}
         {recent.map((notice) => notice.fieldChange ? (
           <article key={notice.id} className="panel px-4 py-3 text-sm">
-            <p>
-              <Link className="font-semibold text-pine" href={`/dimensions/${notice.fieldChange.locationId}`}>{notice.fieldChange.field.friendlyName}</Link>
-              {": "}{notice.fieldChange.oldValue || "blank"} → {notice.fieldChange.newValue || "blank"}
-            </p>
+            {canSeeValue(access, notice.fieldChange.fieldId, notice.fieldChange.field.categoryId) ? (
+              <p>
+                <Link className="font-semibold text-pine" href={`/dimensions/${notice.fieldChange.locationId}`}>{notice.fieldChange.field.friendlyName}</Link>
+                {": "}{notice.fieldChange.oldValue || "blank"} → {notice.fieldChange.newValue || "blank"}
+              </p>
+            ) : (
+              <p>
+                <Link className="font-semibold text-pine" href={`/dimensions/${notice.fieldChange.locationId}`}>A record changed</Link>
+                {". You do not have access to the changed attribute."}
+              </p>
+            )}
             <p className="text-xs text-muted">{notice.fieldChange.user.name} · {notice.fieldChange.createdAt.toLocaleString()}</p>
           </article>
         ) : null)}

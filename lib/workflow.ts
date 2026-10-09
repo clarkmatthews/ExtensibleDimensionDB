@@ -1,6 +1,7 @@
 import type { TaskPriority } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { groupMemberIds, notifyUsers, watcherIds } from "@/lib/notify";
+import { canSeeValue, loadAccessForUsers } from "@/lib/permissions";
 
 const PRIORITY_UP: Record<TaskPriority, TaskPriority> = {
   LOW: "NORMAL",
@@ -32,6 +33,11 @@ function changeText(change: SavedChange, userName: string) {
   return `${userName} changed ${change.attribute} from "${before}" to "${after}".`;
 }
 
+/** Sent to a recipient who cannot view the changed attribute: no attribute name and no values. */
+export function hiddenChangeText(userName: string) {
+  return `${userName} changed a record. You do not have access to the changed attribute.`;
+}
+
 async function recipientIds(recipients: { groupId: string | null; userId: string | null }[]) {
   const ids: string[] = [];
   for (const recipient of recipients) {
@@ -46,7 +52,15 @@ async function notifyChange(
   change: SavedChange,
   userName: string,
 ) {
-  await notifyUsers(await recipientIds(recipients), changeText(change, userName), undefined, change.id);
+  const ids = await recipientIds(recipients);
+  const access = await loadAccessForUsers(ids);
+  const allowed = ids.filter((id) => {
+    const ctx = access.get(id);
+    return ctx ? canSeeValue(ctx, change.fieldId, change.categoryId) : false;
+  });
+  const restricted = ids.filter((id) => !allowed.includes(id) && access.has(id));
+  await notifyUsers(allowed, changeText(change, userName), undefined, change.id);
+  await notifyUsers(restricted, hiddenChangeText(userName), undefined, change.id);
 }
 
 async function startTaskProcess(

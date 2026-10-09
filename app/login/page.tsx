@@ -5,7 +5,7 @@ import { siteName } from "@/lib/site";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; wait?: string }>;
 }) {
   const params = await searchParams;
   const name = await siteName();
@@ -25,7 +25,7 @@ export default async function LoginPage({
         ) : null}
         {params.error === "locked" ? (
           <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-danger">
-            Too many sign-in attempts. Try again in an hour.
+            Too many sign-in attempts. Try again in {waitText(params.wait)}.
           </p>
         ) : null}
         {params.error === "setup" ? (
@@ -49,4 +49,9 @@ export default async function LoginPage({
       </form>
     </div>
   );
+}
+
+function waitText(raw: string | undefined) {
+  const minutes = Math.min(Math.max(Number.parseInt(raw ?? "", 10) || 1, 1), 60);
+  return minutes === 1 ? "a minute" : `${minutes} minutes`;
 }

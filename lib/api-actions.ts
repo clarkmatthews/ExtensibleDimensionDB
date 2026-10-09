@@ -2,7 +2,10 @@
 
 import { randomBytes, randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { hashShareSecret, NEW_SECRET_COOKIE } from "@/lib/api-share";
+import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, loadAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
@@ -27,6 +30,20 @@ function dateOrNull(value: string) {
 
 function newSecret() {
   return randomBytes(32).toString("base64url");
+}
+
+/** Stores only the hash and keeps the plain secret in a short-lived cookie so the page can show it once. */
+async function issueSecret(endpointId: string) {
+  const secret = newSecret();
+  const jar = await cookies();
+  jar.set(NEW_SECRET_COOKIE, `${endpointId}:${secret}`, {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    path: "/admin/api",
+    maxAge: 120,
+  });
+  return { secretHash: hashShareSecret(secret), secretHint: secret.slice(-4) };
 }
 
 async function readScope(formData: FormData) {
@@ -63,43 +80,49 @@ async function writeScope(endpointId: string, categoryRows: { categoryId: string
 }
 
 export async function saveApiEndpoint(formData: FormData) {
-  await editor();
-  const id = text(formData, "id");
-  const name = text(formData, "name");
-  const description = text(formData, "description");
-  const format = text(formData, "format") === "XML" ? "XML" : "JSON";
-  const secretOptional = formData.get("secretOptional") === "on";
-  const validFrom = dateOrNull(text(formData, "validFrom"));
-  const validTo = dateOrNull(text(formData, "validTo"));
-  if (!name) redirect("/admin/api?error=A%20friendly%20name%20is%20required.");
-  if (validFrom && validTo && validFrom > validTo) {
-    redirect("/admin/api?error=The%20from%20date%20must%20be%20on%20or%20before%20the%20to%20date.");
-  }
-  const { categoryRows, fieldRows } = await readScope(formData);
-  if (!categoryRows.length) redirect("/admin/api?error=Choose%20at%20least%20one%20category%20or%20field.");
-  const data = { name, description, format, validFrom, validTo, secretOptional };
-  const endpointId = id || randomUUID();
-  if (id) await prisma.apiEndpoint.update({ where: { id }, data });
-  else await prisma.apiEndpoint.create({ data: { id: endpointId, ...data, secret: newSecret() } });
-  await writeScope(endpointId, categoryRows, fieldRows);
-  revalidatePath("/admin/api");
-  redirect("/admin/api?saved=1");
+  return audited("api.saveApiEndpoint", [formData], async () => {
+    await editor();
+    const id = text(formData, "id");
+    const name = text(formData, "name");
+    const description = text(formData, "description");
+    const format = text(formData, "format") === "XML" ? ("XML" as const) : ("JSON" as const);
+    const secretOptional = formData.get("secretOptional") === "on";
+    const validFrom = dateOrNull(text(formData, "validFrom"));
+    const validTo = dateOrNull(text(formData, "validTo"));
+    if (!name) redirect("/admin/api?error=A%20friendly%20name%20is%20required.");
+    if (validFrom && validTo && validFrom > validTo) {
+      redirect("/admin/api?error=The%20from%20date%20must%20be%20on%20or%20before%20the%20to%20date.");
+    }
+    const { categoryRows, fieldRows } = await readScope(formData);
+    if (!categoryRows.length) redirect("/admin/api?error=Choose%20at%20least%20one%20category%20or%20field.");
+    const data = { name, description, format, validFrom, validTo, secretOptional };
+    const endpointId = id || randomUUID();
+    if (id) await prisma.apiEndpoint.update({ where: { id }, data });
+    else await prisma.apiEndpoint.create({ data: { id: endpointId, ...data, ...(await issueSecret(endpointId)) } });
+    await writeScope(endpointId, categoryRows, fieldRows);
+    revalidatePath("/admin/api");
+    redirect("/admin/api?saved=1");
+  });
 }
 
 export async function setApiEndpointActive(formData: FormData) {
-  await editor();
-  const id = text(formData, "id");
-  const isActive = text(formData, "active") === "1";
-  if (id) await prisma.apiEndpoint.update({ where: { id }, data: { isActive } });
-  revalidatePath("/admin/api");
-  redirect("/admin/api?saved=1");
+  return audited("api.setApiEndpointActive", [formData], async () => {
+    await editor();
+    const id = text(formData, "id");
+    const isActive = text(formData, "active") === "1";
+    if (id) await prisma.apiEndpoint.update({ where: { id }, data: { isActive } });
+    revalidatePath("/admin/api");
+    redirect("/admin/api?saved=1");
+  });
 }
 
 export async function regenerateApiSecret(formData: FormData) {
-  await editor();
-  const id = text(formData, "id");
-  if (!id) redirect("/admin/api?error=Choose%20an%20endpoint.");
-  await prisma.apiEndpoint.update({ where: { id }, data: { secret: newSecret() } });
-  revalidatePath("/admin/api");
-  redirect("/admin/api?saved=secret");
+  return audited("api.regenerateApiSecret", [formData], async () => {
+    await editor();
+    const id = text(formData, "id");
+    if (!id) redirect("/admin/api?error=Choose%20an%20endpoint.");
+    await prisma.apiEndpoint.update({ where: { id }, data: await issueSecret(id) });
+    revalidatePath("/admin/api");
+    redirect("/admin/api?saved=secret");
+  });
 }

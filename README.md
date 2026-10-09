@@ -121,7 +121,7 @@ Every saved attribute change is recorded with the old value, the new value, the 
 
 ![Site](docs/screenshots/site.png)
 
-**API Config** creates a share endpoint. Choose JSON or XML, an optional date window, and the dimensions or attributes to include. Callers send the secret as `Authorization: Bearer`. The screenshot of an existing endpoint is omitted so a live secret is not published; the new-endpoint form is shown below.
+**API Config** creates a share endpoint. Choose JSON or XML, an optional date window, and the dimensions or attributes to include. Callers send the secret as `Authorization: Bearer`. Only a hash of the secret is stored, so it is shown once, when the endpoint is created or the secret is regenerated; afterwards the page shows only its last four characters. A caller that sends the wrong secret more than 5 times is blocked from that endpoint for an hour.
 
 ![API configuration](docs/screenshots/api.png)
 
@@ -130,6 +130,16 @@ Every saved attribute change is recorded with the old value, the new value, the 
 **Email Config** stores the SMTP server, port, security (none, STARTTLS, or TLS), username, and password. The password is encrypted in the database and is not shown again after it is saved. Messages are always stored in the app, including when email is off.
 
 ![Email configuration](docs/screenshots/email.png)
+
+**Audit log** lists every successful administrative change: data definitions, lists, users, groups, permissions, workflows, API endpoints, email and site settings, sign-ins, and sign-out-everywhere. Each entry shows who made it, when, and the submitted values. Passwords and secrets are never recorded. Grant access to it like any other screen on Permissions.
+
+## Security
+
+- **Sessions** are stored on the server. Signing out ends that browser's session. Changing a password or disabling an account signs the person out everywhere, and a user's page lists their signed-in browsers with a **Sign out everywhere** button.
+- **Sign-in throttling** slows guessing without locking anyone out: after 5 failures for an email, each attempt waits a little longer, up to 5 minutes. Repeated failures from one address are blocked per address.
+- **Attribute permissions apply everywhere.** Change notifications, emails, the dashboard, the changelog, exports, and the MCP server only show values a person is allowed to view.
+- **Record saves are all-or-nothing**, and unique identifiers are checked under a database lock so two people cannot save the same identifier at once.
+- **Behind a reverse proxy, set `TRUST_PROXY=true`** so the app sees each caller's real address. Without it, every remote caller shares one address, and per-address throttling is turned off rather than blocking everyone.
 
 ## AI knowledge
 
@@ -169,6 +179,10 @@ npm run dev
 ```
 
 5. Open [http://localhost:3000](http://localhost:3000) and sign in as `admin@local`.
+
+Run the unit tests with `npm test`.
+
+**Upgrading an existing database:** run `npx prisma migrate deploy` after pulling. Existing share secrets keep working (they are converted to hashes in place), and everyone signs in once more because sessions moved to the server.
 
 `.env` is not committed. Set `ADMIN_PASSWORD` in `.env` before the first seed if you want to choose the administrator password. If you leave it unset, the seed prints a one-time password and does not print it again on later runs.
 

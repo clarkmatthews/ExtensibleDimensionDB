@@ -1,10 +1,10 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { CopyButton } from "@/components/copy-button";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { regenerateApiSecret, saveApiEndpoint, setApiEndpointActive } from "@/lib/api-actions";
-import { dateKey } from "@/lib/api-share";
+import { dateKey, NEW_SECRET_COOKIE } from "@/lib/api-share";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -38,8 +38,9 @@ export default async function ApiConfigPage({
       },
     }),
   ]);
+  const freshSecret = canEdit ? readFreshSecret((await cookies()).get(NEW_SECRET_COOKIE)?.value) : null;
   const saved =
-    params.saved === "secret" ? "Secret regenerated. Copy the new key and share it again." : params.saved ? "API endpoint saved." : "";
+    params.saved === "secret" ? "Secret regenerated. Copy the new key below and share it again. It is shown only once." : params.saved ? "API endpoint saved." : "";
 
   return (
     <div className="space-y-6">
@@ -98,12 +99,23 @@ export default async function ApiConfigPage({
               <label>
                 <span className="label">
                   Secret
-                  <HelpTip text="Sent on every request as Authorization: Bearer followed by this key, unless Secret optional is checked. It is not part of the URL. An address that sends the wrong secret more than 5 times is blocked for 1 hour." />
+                  <HelpTip text="Sent on every request as Authorization: Bearer followed by this key, unless Secret optional is checked. It is not part of the URL. Only a hash is stored, so the key is shown once when it is created or regenerated. An address that sends the wrong secret more than 5 times to this endpoint is blocked from it for 1 hour." />
                 </span>
-                <input className="field font-mono" readOnly value={endpoint.secret} />
+                {freshSecret?.endpointId === endpoint.id ? (
+                  <input className="field font-mono" readOnly value={freshSecret.secret} />
+                ) : (
+                  <input className="field font-mono text-muted" readOnly value={endpoint.secretHint ? `Ends in ${endpoint.secretHint}` : "Hidden"} />
+                )}
               </label>
-              <span className="self-end"><CopyButton value={endpoint.secret} label="Copy secret" /></span>
+              {freshSecret?.endpointId === endpoint.id ? (
+                <span className="self-end"><CopyButton value={freshSecret.secret} label="Copy secret" /></span>
+              ) : <span />}
             </div>
+            {freshSecret?.endpointId === endpoint.id ? (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-warn">
+                Copy this secret now. It is shown only once and is not stored. If it is lost, regenerate it.
+              </p>
+            ) : null}
             {endpoint.secretOptional ? (
               <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-warn">
                 The secret is optional on this endpoint. Anyone with the URL can read the shared data. Do not leave the secret optional for production use.
@@ -300,4 +312,11 @@ function EndpointForm({
       <button className="btn" type="submit">{endpoint ? "Save endpoint" : "Create endpoint"}</button>
     </form>
   );
+}
+
+function readFreshSecret(raw: string | undefined) {
+  if (!raw) return null;
+  const split = raw.indexOf(":");
+  if (split < 1) return null;
+  return { endpointId: raw.slice(0, split), secret: raw.slice(split + 1) };
 }

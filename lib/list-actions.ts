@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ChoiceSource, Prisma } from "@prisma/client";
 import { deleteChoiceList, previewChoiceItem, previewChoiceList, purgeListValue } from "@/lib/cascade-delete";
+import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, loadAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
@@ -139,93 +140,99 @@ function refresh() {
 }
 
 export async function createList(formData: FormData) {
-  await editor();
-  const name = text(formData, "name");
-  const description = text(formData, "description");
-  const parentListId = text(formData, "parentListId");
-  if (!name) redirect("/admin/lists?error=List%20name%20is%20required.");
-  if (parentListId) {
-    const error = await parentError("", parentListId);
-    if (error) redirect(`/admin/lists?error=${encodeURIComponent(error)}`);
-  }
-  const list = await prisma.choiceList.create({
-    data: { name, description, parentListId: parentListId || null },
+  return audited("lists.createList", [formData], async () => {
+    await editor();
+    const name = text(formData, "name");
+    const description = text(formData, "description");
+    const parentListId = text(formData, "parentListId");
+    if (!name) redirect("/admin/lists?error=List%20name%20is%20required.");
+    if (parentListId) {
+      const error = await parentError("", parentListId);
+      if (error) redirect(`/admin/lists?error=${encodeURIComponent(error)}`);
+    }
+    const list = await prisma.choiceList.create({
+      data: { name, description, parentListId: parentListId || null },
+    });
+    refresh();
+    redirect(`/admin/lists?open=${list.id}`);
   });
-  refresh();
-  redirect(`/admin/lists?open=${list.id}`);
 }
 
 export async function setListActive(formData: FormData) {
-  await editor();
-  const id = text(formData, "id");
-  const active = text(formData, "active") === "1";
-  await prisma.choiceList.update({ where: { id }, data: { isActive: active } });
-  refresh();
+  return audited("lists.setListActive", [formData], async () => {
+    await editor();
+    const id = text(formData, "id");
+    const active = text(formData, "active") === "1";
+    await prisma.choiceList.update({ where: { id }, data: { isActive: active } });
+    refresh();
+  });
 }
 
 export async function saveListContents(formData: FormData) {
-  await editor();
-  const id = text(formData, "id");
-  const name = text(formData, "name");
-  const description = text(formData, "description");
-  const parentListId = text(formData, "parentListId");
-  const list = await prisma.choiceList.findUnique({ where: { id }, include: { fields: { select: { dataType: true } } } });
-  if (!list) return { error: "This list was not found." };
-  if (!name) return { error: "List name is required." };
-  if (parentListId) {
-    const error = await parentError(id, parentListId);
-    if (error) return { error };
-  }
+  return audited("lists.saveListContents", [formData], async () => {
+    await editor();
+    const id = text(formData, "id");
+    const name = text(formData, "name");
+    const description = text(formData, "description");
+    const parentListId = text(formData, "parentListId");
+    const list = await prisma.choiceList.findUnique({ where: { id }, include: { fields: { select: { dataType: true } } } });
+    if (!list) return { error: "This list was not found." };
+    if (!name) return { error: "List name is required." };
+    if (parentListId) {
+      const error = await parentError(id, parentListId);
+      if (error) return { error };
+    }
 
-  const items = cleanItems(JSON.parse(text(formData, "items") || "[]") as ListItemInput[]);
-  const keepItems = items.length === 0 && Boolean(list.parentListId || parentListId);
-  const activeCount = items.filter((item) => item.isActive).length;
-  if (!keepItems && activeCount < 1) return { error: "Add at least one active list item." };
-  if (!keepItems && list.fields.some((field) => field.dataType === "RADIO") && (activeCount < 2 || activeCount > 5)) {
-    return { error: "A list used by a radio attribute needs between 2 and 5 active items." };
-  }
+    const items = cleanItems(JSON.parse(text(formData, "items") || "[]") as ListItemInput[]);
+    const keepItems = items.length === 0 && Boolean(list.parentListId || parentListId);
+    const activeCount = items.filter((item) => item.isActive).length;
+    if (!keepItems && activeCount < 1) return { error: "Add at least one active list item." };
+    if (!keepItems && list.fields.some((field) => field.dataType === "RADIO") && (activeCount < 2 || activeCount > 5)) {
+      return { error: "A list used by a radio attribute needs between 2 and 5 active items." };
+    }
 
-  await prisma.$transaction(async (tx) => {
-    const previous = keepItems ? [] : await tx.choiceListItem.findMany({ where: { listId: id }, select: { id: true, value: true } });
-    await tx.choiceList.update({
-      where: { id },
-      data: {
-        name,
-        description,
-        parentListId: parentListId || null,
-        choiceSource: list.choiceSource as ChoiceSource,
-      },
-    });
-    if (!keepItems) {
-      const nextById = new Map(items.filter((item) => item.id).map((item) => [item.id, item.value]));
-      for (const old of previous) {
-        const nextValue = nextById.get(old.id);
-        if (!nextValue) await purgeListValue(tx, id, old.value);
-        else if (nextValue !== old.value) {
-          await remapChildValues(tx, id, old.value, nextValue);
-          await renameStoredValues(tx, id, old.value, nextValue);
+    await prisma.$transaction(async (tx) => {
+      const previous = keepItems ? [] : await tx.choiceListItem.findMany({ where: { listId: id }, select: { id: true, value: true } });
+      await tx.choiceList.update({
+        where: { id },
+        data: {
+          name,
+          description,
+          parentListId: parentListId || null,
+          choiceSource: list.choiceSource as ChoiceSource,
+        },
+      });
+      if (!keepItems) {
+        const nextById = new Map(items.filter((item) => item.id).map((item) => [item.id, item.value]));
+        for (const old of previous) {
+          const nextValue = nextById.get(old.id);
+          if (!nextValue) await purgeListValue(tx, id, old.value);
+          else if (nextValue !== old.value) {
+            await remapChildValues(tx, id, old.value, nextValue);
+            await renameStoredValues(tx, id, old.value, nextValue);
+          }
+        }
+        await tx.choiceListItem.deleteMany({ where: { listId: id } });
+        if (items.length) {
+          await tx.choiceListItem.createMany({
+            data: items.map((item, index) => ({
+              ...(item.id ? { id: item.id } : {}),
+              listId: id,
+              label: item.label,
+              value: item.value,
+              parentValues: item.parentValues,
+              isDefault: item.isDefault,
+              isActive: item.isActive,
+              sortOrder: index,
+            })),
+          });
         }
       }
-      await tx.choiceListItem.deleteMany({ where: { listId: id } });
-      if (items.length) {
-        await tx.choiceListItem.createMany({
-          data: items.map((item, index) => ({
-            ...(item.id ? { id: item.id } : {}),
-            listId: id,
-            label: item.label,
-            value: item.value,
-            parentValues: item.parentValues,
-            isDefault: item.isDefault,
-            isActive: item.isActive,
-            sortOrder: index,
-          })),
-        });
-      }
-    }
-    await syncFields(tx, id);
+      await syncFields(tx, id);
+    });
+    refresh();
+    return { error: "" };
   });
-  refresh();
-  return { error: "" };
 }
 
 export async function searchListItems(listId: string, parentValue: string, query: string) {
@@ -253,52 +260,56 @@ export async function searchListItems(listId: string, parentValue: string, query
 }
 
 export async function addListItem(listId: string, parentValue: string, label: string) {
-  await editor();
-  const name = label.trim();
-  const parent = parentValue.trim();
-  if (!name) return { error: "Item name is required." };
-  const list = await prisma.choiceList.findUnique({ where: { id: listId }, select: { parentListId: true } });
-  if (!list) return { error: "This list was not found." };
-  if (list.parentListId && !parent) return { error: "Choose a value from the list this one follows." };
-  const correlated = list.parentListId ? parent : "";
-  const existing = await prisma.choiceListItem.findFirst({
-    where: { listId, parentValues: correlated, label: { equals: name, mode: "insensitive" } },
-    select: { id: true },
+  return audited("lists.addListItem", [listId, parentValue, label], async () => {
+    await editor();
+    const name = label.trim();
+    const parent = parentValue.trim();
+    if (!name) return { error: "Item name is required." };
+    const list = await prisma.choiceList.findUnique({ where: { id: listId }, select: { parentListId: true } });
+    if (!list) return { error: "This list was not found." };
+    if (list.parentListId && !parent) return { error: "Choose a value from the list this one follows." };
+    const correlated = list.parentListId ? parent : "";
+    const existing = await prisma.choiceListItem.findFirst({
+      where: { listId, parentValues: correlated, label: { equals: name, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (existing) return { error: "That item is already listed for this value." };
+    await prisma.choiceListItem.create({
+      data: { listId, label: name, value: name, parentValues: correlated },
+    });
+    refresh();
+    return { error: "" };
   });
-  if (existing) return { error: "That item is already listed for this value." };
-  await prisma.choiceListItem.create({
-    data: { listId, label: name, value: name, parentValues: correlated },
-  });
-  refresh();
-  return { error: "" };
 }
 
 export async function updateListItem(id: string, label: string, value: string, isActive: boolean) {
-  await editor();
-  const name = label.trim();
-  const stored = value.trim() || name;
-  if (!name || !stored) return { error: "Label and stored value are required." };
-  const current = await prisma.choiceListItem.findUnique({
-    where: { id },
-    select: { listId: true, parentValues: true, value: true },
+  return audited("lists.updateListItem", [id, label, value, isActive], async () => {
+    await editor();
+    const name = label.trim();
+    const stored = value.trim() || name;
+    if (!name || !stored) return { error: "Label and stored value are required." };
+    const current = await prisma.choiceListItem.findUnique({
+      where: { id },
+      select: { listId: true, parentValues: true, value: true },
+    });
+    if (!current) return { error: "That item was not found." };
+    const duplicate = await prisma.choiceListItem.findFirst({
+      where: {
+        listId: current.listId,
+        parentValues: current.parentValues,
+        id: { not: id },
+        label: { equals: name, mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+    if (duplicate) return { error: "That item is already listed for this value." };
+    await prisma.$transaction(async (tx) => {
+      await tx.choiceListItem.update({ where: { id }, data: { label: name, value: stored, isActive } });
+      if (current.value !== stored) await renameStoredValues(tx, current.listId, current.value, stored);
+    });
+    refresh();
+    return { error: "" };
   });
-  if (!current) return { error: "That item was not found." };
-  const duplicate = await prisma.choiceListItem.findFirst({
-    where: {
-      listId: current.listId,
-      parentValues: current.parentValues,
-      id: { not: id },
-      label: { equals: name, mode: "insensitive" },
-    },
-    select: { id: true },
-  });
-  if (duplicate) return { error: "That item is already listed for this value." };
-  await prisma.$transaction(async (tx) => {
-    await tx.choiceListItem.update({ where: { id }, data: { label: name, value: stored, isActive } });
-    if (current.value !== stored) await renameStoredValues(tx, current.listId, current.value, stored);
-  });
-  refresh();
-  return { error: "" };
 }
 
 export async function previewListDelete(id: string) {
@@ -307,11 +318,13 @@ export async function previewListDelete(id: string) {
 }
 
 export async function deleteList(id: string) {
-  await editor();
-  const removed = await prisma.$transaction((tx) => deleteChoiceList(tx, id));
-  if (!removed) return { error: "This list was not found." };
-  refresh();
-  return { error: "" };
+  return audited("lists.deleteList", [id], async () => {
+    await editor();
+    const removed = await prisma.$transaction((tx) => deleteChoiceList(tx, id));
+    if (!removed) return { error: "This list was not found." };
+    refresh();
+    return { error: "" };
+  });
 }
 
 export async function previewListItemDelete(id: string) {
@@ -320,14 +333,16 @@ export async function previewListItemDelete(id: string) {
 }
 
 export async function removeListItem(id: string) {
-  await editor();
-  const current = await prisma.choiceListItem.findUnique({ where: { id }, select: { id: true, listId: true, value: true } });
-  if (!current) return { error: "That item was not found." };
-  await prisma.$transaction(async (tx) => {
-    await purgeListValue(tx, current.listId, current.value);
-    await tx.choiceListItem.delete({ where: { id } });
-    await syncFields(tx, current.listId);
+  return audited("lists.removeListItem", [id], async () => {
+    await editor();
+    const current = await prisma.choiceListItem.findUnique({ where: { id }, select: { id: true, listId: true, value: true } });
+    if (!current) return { error: "That item was not found." };
+    await prisma.$transaction(async (tx) => {
+      await purgeListValue(tx, current.listId, current.value);
+      await tx.choiceListItem.delete({ where: { id } });
+      await syncFields(tx, current.listId);
+    });
+    refresh();
+    return { error: "" };
   });
-  refresh();
-  return { error: "" };
 }

@@ -12,6 +12,7 @@ export const NAV_MODULES = [
   { id: "SITE_CONFIG", label: "Site", href: "/admin/site", group: "Settings" },
   { id: "API_CONFIG", label: "API Config", href: "/admin/api", group: "Settings" },
   { id: "EMAIL_CONFIG", label: "Email Config", href: "/admin/email", group: "Settings" },
+  { id: "AUDIT", label: "Audit log", href: "/admin/audit", group: "Settings" },
 ] as const;
 
 export type NavModuleId = (typeof NAV_MODULES)[number]["id"];

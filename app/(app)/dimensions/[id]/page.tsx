@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { StoreForm, type EditorCategory } from "@/components/store-form";
-import { canEditModule, canViewModule, categoryAccess, fieldAccess, loadAccess } from "@/lib/permissions";
+import { canEditModule, canSeeValue, canViewModule, categoryAccess, fieldAccess, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { loadFieldChoices } from "@/lib/list-items";
@@ -101,7 +101,7 @@ export default async function StorePage({
       orderBy: { name: "asc" },
     }),
   ]);
-  const visibleChanges = changes.filter((row) => fieldAccess(access, row.fieldId, row.field.categoryId).canView || user.isAdmin);
+  const visibleChanges = changes.filter((row) => canSeeValue(access, row.fieldId, row.field.categoryId));
 
   return (
     <div className="space-y-4">
