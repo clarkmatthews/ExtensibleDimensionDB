@@ -161,7 +161,8 @@ export function StoreGrid({
         ))}
         <button className="btn" type="submit">Search</button>
         <a className="btn-quiet" href={`/api/stores/export${exportQuery ? `?${exportQuery}` : ""}`}>Export CSV</a>
-        <HelpTip text="Search matches any visible value. Export CSV downloads the rows that match the search and the attribute filters." />
+        <a className="btn-quiet" href="/api/stores/export-md">Export MD</a>
+        <HelpTip text="Search matches any visible value. Export CSV downloads the rows that match the search and the attribute filters. Export MD downloads every record you can view, as knowledge cards, and ignores those filters." />
       </form>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <label className="inline-flex items-center">

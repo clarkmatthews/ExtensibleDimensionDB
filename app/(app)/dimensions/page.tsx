@@ -48,7 +48,7 @@ export default async function StoresPage({
         <div>
           <h1 className="flex items-center text-2xl font-semibold">
             Dimension
-            <HelpTip text={`Each row is one dimension. The list shows the attributes you are allowed to view. Search looks through every visible value. Each attribute header has a value list and a Contains box, and those filters apply together.${activeField ? ` ${activeField.friendlyName} starts on ${activeChecked}.` : ""} Export CSV uses the same filters.`} />
+            <HelpTip text={`Each row is one dimension. The list shows the attributes you are allowed to view. Search looks through every visible value. Each attribute header has a value list and a Contains box, and those filters apply together.${activeField ? ` ${activeField.friendlyName} starts on ${activeChecked}.` : ""} Export CSV uses the same filters. Export MD downloads every record you can view, including the schema, and ignores the filters.`} />
           </h1>
           <p className="text-sm text-muted">These are the attributes you are allowed to view.</p>
         </div>

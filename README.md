@@ -124,6 +124,10 @@ Every saved attribute change is recorded with the old value, the new value, the 
 
 ![Email configuration](docs/screenshots/email.png)
 
+## AI knowledge
+
+Models use this database as a brand knowledge source. The schema (dimension and attribute names, descriptions, and lists) tells a model what a fact means. Records are retrieved when a question needs them, as short knowledge cards. Edits in the changelog refresh that knowledge. The share API remains a bulk JSON or XML export for partners. The AI contract is a separate read-only MCP server, described in [docs/ai-knowledge.md](docs/ai-knowledge.md). Start it with `npm run mcp`.
+
 ## Stack
 
 - Next.js 16 (App Router) and React 19
