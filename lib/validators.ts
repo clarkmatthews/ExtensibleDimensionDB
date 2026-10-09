@@ -84,6 +84,8 @@ export async function compilePattern(rules: FieldRules): Promise<string | null> 
 }
 
 function lengthLimit(rules: FieldRules): number | null {
+  // A link stores record ids, so a character limit would cap how many records can be linked.
+  if (rules.dataType === "RECORD_LINK") return null;
   if (rules.maxLength && rules.maxLength > 0) return rules.maxLength;
   if (rules.dataType === "TEXT") return 512;
   if (rules.dataType === "BIG_TEXT") return 6400;
