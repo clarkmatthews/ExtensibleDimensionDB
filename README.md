@@ -22,7 +22,7 @@ The first account is created by the database seed as `admin@local`. Set `ADMIN_P
 
 The menu groups the screens into the main work area, Form Config, People Config, and Settings.
 
-![Navigation menu](docs/screenshots/menu.png)
+<img width="1085" height="682" alt="image" src="https://github.com/user-attachments/assets/e840c086-ae4d-4320-8880-f94e45d922e0" />
 
 ## Dashboard
 
