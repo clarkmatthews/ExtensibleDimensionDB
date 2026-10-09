@@ -26,7 +26,10 @@ const AREAS: { prefix: string; label: string }[] = [
 /** Turns "access.saveUser" into "Save user". */
 function actionLabel(action: string) {
   const name = action.split(".").slice(1).join(".") || action;
-  const words = name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  const words = name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/\b(sso|api|ai)\b/g, (word) => word.toUpperCase());
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
