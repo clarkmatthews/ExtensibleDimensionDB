@@ -8,7 +8,7 @@ The structure is only the start. Built-in workflows turn data changes into work:
 
 The data is also built to be used outside the app:
 
-- **AI-ready by design.** A read-only MCP server lets Claude, Cursor, or any MCP-capable assistant search records and read the schema, but only within the permissions of the user it runs as. Attribute names and descriptions explain what each fact means, so the model gets context and not just raw values. A changelog feed tells indexers what to refresh. For a quick start, a one-click Markdown export packages your permitted data for any model you choose.
+- **AI-ready by design.** Each person can connect Claude, Cursor, or any MCP-capable assistant with their own token, and the assistant sees only what that person is allowed to see. Attribute names and descriptions explain what each fact means, so the model gets context and not just raw values. Assistants can also propose changes, but nothing is saved until a person approves it, and approved changes land in the changelog like any other edit. For a quick start, a one-click Markdown export packages your permitted data for any model you choose.
 - **Partner-ready sharing.** You can publish any slice of your data as a JSON or XML endpoint, secured with a bearer secret and limited to the dimensions, attributes, and date window you choose.
 - **Domain-agnostic.** The same engine handles a location portfolio (the included sample data), a product catalog, or a vendor registry. Adding a new kind of record is a configuration change, not a code change.
 
@@ -156,7 +156,13 @@ Every saved attribute change is recorded with the old value, the new value, the 
 
 ## AI knowledge
 
-Models use this database as a brand knowledge source. The schema (dimension and attribute names, descriptions, and lists) tells a model what a fact means. Records are retrieved when a question needs them, as short knowledge cards. Edits in the changelog refresh that knowledge. The share API remains a bulk JSON or XML export for partners. The AI contract is a separate read-only MCP server, described in [docs/ai-knowledge.md](docs/ai-knowledge.md). It provides a `schema` resource and `search_records`, `get_record`, and `recent_changes` tools. Set `MCP_USER_EMAIL` in `.env` to the user whose view grants should apply, then start it with `npm run mcp`. For a one-off handoff without MCP, use **Export MD** on the dimension grid.
+Models use this database as a brand knowledge source. The schema (dimension and attribute names, descriptions, and lists) tells a model what a fact means. Records are retrieved when a question needs them, as short knowledge cards. Edits in the changelog refresh that knowledge. The share API remains a bulk JSON or XML export for partners. The AI contract is an MCP server, described in [docs/ai-knowledge.md](docs/ai-knowledge.md). It provides a `schema` resource and `search_records`, `get_record`, and `recent_changes` tools.
+
+- **Hosted, per person.** On **AI access**, each person creates a token and copies the connection command for their assistant. The app serves MCP at `/api/mcp`, and the assistant answers from what that person can view. Tokens can expire and be revoked, and administrators can revoke anyone's.
+- **Governed write-back.** A token created with **Allow proposing changes** adds a `propose_change` tool. The assistant's change is checked with the record form's rules, then waits on **AI proposals** until someone approves or rejects it. Reviewers can only approve attributes they may update, and someone other than the token's owner must review it unless the reviewer is an administrator. Approved changes are saved with the changelog, workflows, and webhooks, and are marked as coming from an AI proposal.
+- **Local and read-only.** `npm run mcp` runs the same tools over stdio as the user in `MCP_USER_EMAIL`, with no write tools.
+
+For a one-off handoff without MCP, use **Export MD** on the dimension grid.
 
 ## Stack
 

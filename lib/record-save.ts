@@ -179,6 +179,8 @@ export async function saveRecord(input: {
   locationId: string;
   values: RecordInput;
   parentValues?: ParentInput;
+  /** Set when an approved AI proposal is being applied, for the changelog. */
+  proposalId?: string;
 }): Promise<SaveResult> {
   const { ctx, access, userId, locationId } = input;
   if (locationId) {
@@ -222,7 +224,7 @@ export async function saveRecord(input: {
         });
         if (oldValue === newValue) continue;
         const row = await tx.fieldChange.create({
-          data: { locationId: location.id, fieldId: write.field.id, userId, oldValue, newValue },
+          data: { locationId: location.id, fieldId: write.field.id, userId, oldValue, newValue, proposalId: input.proposalId ?? null },
         });
         changes.push({
           id: row.id,
