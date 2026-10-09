@@ -12,8 +12,6 @@ The data is also built to be used outside the app:
 - **Partner-ready sharing.** You can publish any slice of your data as a JSON or XML endpoint, secured with a bearer secret and limited to the dimensions, attributes, and date window you choose.
 - **Domain-agnostic.** The same engine handles a location portfolio (the included sample data), a product catalog, or a vendor registry. Adding a new kind of record is a configuration change, not a code change.
 
-It's open source under MIT and built on Next.js 16, React 19, PostgreSQL, and Prisma.
-
 The name in the header, on the sign-in page, and in the browser title is a site setting. The screenshots below are from a local site named **Dimension Extender**.
 
 ## What you can define
