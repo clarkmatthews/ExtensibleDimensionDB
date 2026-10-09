@@ -53,6 +53,7 @@ export default async function StoresPage({
           <p className="text-sm text-muted">These are the attributes you are allowed to view.</p>
         </div>
         <div className="flex items-center gap-2">
+          {canEditModule(access, "IMPORT") ? <Link className="btn-quiet" href="/dimensions/import">Import</Link> : null}
           <Link className="btn-quiet" href="/dimensions/archived">Archived</Link>
           {canCreate ? (
             <Link className="btn" href="/dimensions/new">

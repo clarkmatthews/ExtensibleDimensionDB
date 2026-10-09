@@ -1,6 +1,7 @@
 export const NAV_MODULES = [
   { id: "INBOX", label: "Dashboard", href: "/dashboard", group: "" },
   { id: "STORES", label: "Dimensions", href: "/dimensions", group: "" },
+  { id: "IMPORT", label: "Import", href: "/dimensions/import", group: "" },
   { id: "TASK_REPORT", label: "Action report", href: "/reports/tasks", group: "" },
   { id: "DEFINITION", label: "Data definition", href: "/admin/definition", group: "Form Config" },
   { id: "LISTS", label: "Lists", href: "/admin/lists", group: "Form Config" },
@@ -12,6 +13,7 @@ export const NAV_MODULES = [
   { id: "SITE_CONFIG", label: "Site", href: "/admin/site", group: "Settings" },
   { id: "API_CONFIG", label: "API Config", href: "/admin/api", group: "Settings" },
   { id: "EMAIL_CONFIG", label: "Email Config", href: "/admin/email", group: "Settings" },
+  { id: "WEBHOOKS", label: "Webhooks", href: "/admin/webhooks", group: "Settings" },
   { id: "AUDIT", label: "Audit log", href: "/admin/audit", group: "Settings" },
 ] as const;
 

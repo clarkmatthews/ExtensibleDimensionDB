@@ -15,6 +15,8 @@ const AREAS: { prefix: string; label: string }[] = [
   { prefix: "mail.", label: "Email Config" },
   { prefix: "site.", label: "Site" },
   { prefix: "records.", label: "Records" },
+  { prefix: "webhooks.", label: "Webhooks" },
+  { prefix: "import.", label: "Import" },
   { prefix: "session.", label: "Sign-in sessions" },
 ];
 
