@@ -1,6 +1,6 @@
 import type { FieldDefinition, FieldValue } from "@prisma/client";
 import type { AccessContext, AccessUser } from "@/lib/permissions";
-import { fieldAccess, loadAccess } from "@/lib/permissions";
+import { canSeeValue, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { checkboxCheckedText, displayStored, type DefinedField } from "@/lib/values";
 
@@ -51,7 +51,7 @@ async function visibleFields(ctx: AccessContext) {
     },
     orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
   });
-  return fields.filter((field) => fieldAccess(ctx, field.id, field.categoryId).canView);
+  return fields.filter((field) => canSeeValue(ctx, field.id, field.categoryId));
 }
 
 export async function schemaCatalog(ctx: AccessContext) {
@@ -162,8 +162,14 @@ export function knowledgeCard(fields: LoadedField[], values: FieldValue[], label
   return lines.join("\n");
 }
 
-async function cardsFor(fields: LoadedField[], locationIds: string[]) {
-  if (!locationIds.length || !fields.length) return [];
+async function cardsFor(fields: LoadedField[], requestedIds: string[]) {
+  if (!requestedIds.length || !fields.length) return [];
+  // Archived records are not knowledge.
+  const active = new Set(
+    (await prisma.location.findMany({ where: { id: { in: requestedIds }, isActive: true }, select: { id: true } })).map((row) => row.id),
+  );
+  const locationIds = requestedIds.filter((id) => active.has(id));
+  if (!locationIds.length) return [];
   const values = await prisma.fieldValue.findMany({
     where: { locationId: { in: locationIds }, fieldId: { in: fields.map((field) => field.id) } },
   });
@@ -276,7 +282,7 @@ export async function recentChanges(ctx: AccessContext, since: string) {
     orderBy: { createdAt: "desc" },
     take: CHANGE_LIMIT,
   });
-  const visible = rows.filter((row) => fieldAccess(ctx, row.fieldId, row.field.categoryId).canView);
+  const visible = rows.filter((row) => canSeeValue(ctx, row.fieldId, row.field.categoryId));
   const labels = await subjectLabels(visible.map((row) => row.locationId));
   if (!visible.length) return "No changes since that time.";
   return visible

@@ -146,7 +146,7 @@ export function ListConfigDialog({
             ))}
           </select>
           <span className="mt-1 block text-xs text-muted">
-            Items can be limited to values from the list this one follows. Leave an item's parent values empty to show it for every parent value.
+            Items can be limited to values from the list this one follows. Leave an item&apos;s parent values empty to show it for every parent value.
           </span>
         </label>
         {showPresentation && dataType === "DROPDOWN" ? (

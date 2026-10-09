@@ -14,6 +14,7 @@ const AREAS: { prefix: string; label: string }[] = [
   { prefix: "api.", label: "API Config" },
   { prefix: "mail.", label: "Email Config" },
   { prefix: "site.", label: "Site" },
+  { prefix: "records.", label: "Records" },
   { prefix: "session.", label: "Sign-in sessions" },
 ];
 

@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import { DATA_TYPES, type DataTypeName } from "@/lib/field-types";
+import { type DataTypeName } from "@/lib/field-types";
 
 export { DATA_TYPES, TYPE_LABELS, type DataTypeName } from "@/lib/field-types";
 

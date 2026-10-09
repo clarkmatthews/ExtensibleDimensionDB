@@ -291,7 +291,11 @@ model FieldOption {
 
 model Location {
   id        String         @id @default(cuid())
+  /// False when the record is archived. Archived records are hidden from the grid, exports,
+  /// the share API, and AI knowledge, and cannot be edited until they are restored.
   isActive  Boolean        @default(true)
+  archivedAt   DateTime?
+  archivedById String?
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
   values    FieldValue[]
@@ -441,6 +445,8 @@ model StoreProcess {
   originatorId String
   originator   User            @relation("Originator", fields: [originatorId], references: [id])
   suspended    Boolean         @default(false)
+  /// True when archiving the record suspended this process, so restoring the record resumes it.
+  suspendedByArchive Boolean   @default(false)
   createdAt    DateTime        @default(now())
   tasks        Task[]
 }
@@ -559,6 +565,13 @@ model LoginLock {
   failureCount Int       @default(0)
   blockedUntil DateTime?
   updatedAt    DateTime  @updatedAt
+}
+
+/// Background jobs that must run on one server only, and when they last ran.
+model JobRun {
+  name       String   @id
+  lastRunAt  DateTime
+  lastResult String   @default("")
 }
 
 model SiteSettings {

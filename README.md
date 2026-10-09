@@ -46,6 +46,8 @@ The dimension list is the working grid. Search, filter each attribute, choose wh
 
 <img width="1220" height="733" alt="image" src="https://github.com/user-attachments/assets/e4a3d40b-cc69-4950-af46-05d9b6623dc8" />
 
+**Archived** lists records that were archived. Archiving a record (from its page) hides it from the grid, exports, the share API, and AI knowledge, blocks edits, and pauses its open workflows. Its values and changelog are kept, and **Restore** brings it back and resumes those workflows.
+
 A record is edited by dimension. List attributes that follow another list, such as city after state, reload when the parent value changes. List nesting can be more than 2 deep. The created-date attribute is filled from the record and is read only. The page also shows the latest edits for that record and can start a workflow that allows a manual start.
 
 ![Record](docs/screenshots/record.png)
@@ -153,6 +155,19 @@ Models use this database as a brand knowledge source. The schema (dimension and 
 - Signed httpOnly session cookie
 - Nodemailer for optional SMTP delivery
 
+## Run with Docker
+
+```bash
+cp .env.example .env      # set AUTH_SECRET, and ADMIN_PASSWORD for the first start
+docker compose up -d
+```
+
+This starts PostgreSQL and the app on [http://localhost:3000](http://localhost:3000). On every start the app applies migrations; on the first start against an empty database it also runs the seed. Set `TRUST_PROXY=true` in `.env` when the app sits behind a reverse proxy.
+
+## Background jobs
+
+The app checks for overdue actions every 15 minutes (`OVERDUE_CHECK_MINUTES`) and cleans up expired sessions and throttling counters every 6 hours. When several app servers share one database, a database lock makes sure only one runs each job. To use an outside scheduler instead, set `SCHEDULER=off` and have it `POST /api/alerts/overdue` with the `x-alert-secret` header set to `ALERT_SECRET`.
+
 ## Local setup
 
 1. Install Node.js and PostgreSQL.
@@ -180,7 +195,7 @@ npm run dev
 
 5. Open [http://localhost:3000](http://localhost:3000) and sign in as `admin@local`.
 
-Run the unit tests with `npm test`.
+Run the checks with `npm run typecheck`, `npm run lint`, and `npm test`. GitHub Actions runs all of them on every pull request, along with every migration and the seed against an empty PostgreSQL database.
 
 **Upgrading an existing database:** run `npx prisma migrate deploy` after pulling. Existing share secrets keep working (they are converted to hashes in place), and everyone signs in once more because sessions moved to the server.
 

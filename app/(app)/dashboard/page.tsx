@@ -7,11 +7,15 @@ import { canEditModule, canSeeValue, canViewModule, firstModuleHref, loadAccess 
 import { taskAction } from "@/lib/store-actions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { raiseOverdueAlerts } from "@/lib/workflow";
 
 const PRIORITY_RANK = { HIGH: 0, NORMAL: 1, LOW: 2 };
 
 export const metadata: Metadata = { title: "Dashboard" };
+
+/** The time this request is rendered, read once so sorting and the overdue labels agree. */
+function requestTime() {
+  return Date.now();
+}
 
 export default async function DashboardPage({
   searchParams,
@@ -28,7 +32,6 @@ export default async function DashboardPage({
   }
   const canEdit = canEditModule(access, "INBOX");
   const params = await searchParams;
-  await raiseOverdueAlerts();
   const recent = await prisma.notification.findMany({
     where: { userId: user.id, fieldChangeId: { not: null } },
     include: { fieldChange: { include: { field: true, user: true } } },
@@ -58,7 +61,7 @@ export default async function DashboardPage({
       fieldChange: { include: { field: true, user: true } },
     },
   });
-  const now = Date.now();
+  const now = requestTime();
   const ordered = [...tasks].sort((left, right) => {
     const leftOverdue = left.deadlineAt.getTime() < now && left.state === "UNACCEPTED";
     const rightOverdue = right.deadlineAt.getTime() < now && right.state === "UNACCEPTED";

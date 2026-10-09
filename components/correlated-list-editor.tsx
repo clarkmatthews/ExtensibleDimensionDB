@@ -62,7 +62,7 @@ export function CorrelatedListEditor({
   const [name, setName] = useState(listName);
   const [notes, setNotes] = useState(description);
   const [parentId, setParentId] = useState(parentListId);
-  const [picks, setPicks] = useState<string[]>([]);
+  const [picks, setPicks] = useState<string[]>(() => defaultPicks(ancestorChain(parentListId, lists)));
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
@@ -81,20 +81,21 @@ export function CorrelatedListEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // When the chain of parent lists changes, start the parent choices over. This adjusts state
+  // during render (the pattern React recommends) instead of in an effect.
   const chainKey = ancestors.map((node) => node.id).join("\n");
-  const ancestorsRef = useRef(ancestors);
-  ancestorsRef.current = ancestors;
-
-  useEffect(() => {
-    const chain = ancestorsRef.current;
-    setPicks(chain.map((node, index) => (index > 0 || node.items.length === 0 ? "" : node.items[0]?.value ?? "")));
+  const [picksForChain, setPicksForChain] = useState(chainKey);
+  if (picksForChain !== chainKey) {
+    setPicksForChain(chainKey);
+    setPicks(defaultPicks(ancestors));
     setQuery("");
-  }, [chainKey]);
-
-  useEffect(() => {
-    let cancel = false;
     setRows([]);
     setTotal(0);
+  }
+
+  // Rows are cleared by whatever changes the parent or the search, then fetched here after a pause.
+  useEffect(() => {
+    let cancel = false;
     const timer = window.setTimeout(async () => {
       if (!parentValue) return;
       const result = await searchListItems(listId, parentValue, query);
@@ -126,7 +127,10 @@ export function CorrelatedListEditor({
     setDraft("");
     setError("");
     setQuery(added);
-    if (query === added) {
+    if (query !== added) {
+      setRows([]);
+      setTotal(0);
+    } else {
       const result = await searchListItems(listId, parentValue, added);
       saved.current = new Map(result.items.map((item) => [item.id, { label: item.label, value: item.value, isActive: item.isActive }]));
       setRows(result.items);
@@ -199,7 +203,11 @@ export function CorrelatedListEditor({
               ))}
               <label>
                 <span className="label">Find an item</span>
-                <input className="field" value={query} placeholder="Search the selected value" onChange={(event) => setQuery(event.target.value)} />
+                <input className="field" value={query} placeholder="Search the selected value" onChange={(event) => {
+                  setQuery(event.target.value);
+                  setRows([]);
+                  setTotal(0);
+                }} />
               </label>
             </div>
             <div className="mt-3 flex gap-2">
@@ -304,6 +312,7 @@ function ParentPick({
   const [term, setTerm] = useState("");
   const [found, setFound] = useState<{ label: string; value: string }[]>([]);
   const loaded = node.items.length > 0;
+  const waitingForParent = !previous && Boolean(node.parentListId);
   const choices = loaded
     ? previous
       ? choicesForParent(
@@ -312,14 +321,12 @@ function ParentPick({
           false,
         )
       : node.items
-    : found;
+    : waitingForParent
+      ? []
+      : found;
 
   useEffect(() => {
-    if (loaded) return;
-    if (!previous && node.parentListId) {
-      setFound([]);
-      return;
-    }
+    if (loaded || waitingForParent) return;
     let cancel = false;
     const timer = window.setTimeout(async () => {
       const result = await searchListItems(node.id, previous, term);
@@ -330,7 +337,7 @@ function ParentPick({
       cancel = true;
       window.clearTimeout(timer);
     };
-  }, [loaded, node.id, node.parentListId, previous, term]);
+  }, [loaded, waitingForParent, node.id, previous, term]);
 
   return (
     <label>
@@ -349,4 +356,9 @@ function ParentPick({
       </select>
     </label>
   );
+}
+
+/** The starting parent choices: the first item of a loaded top-level list, blank otherwise. */
+function defaultPicks(chain: CatalogList[]) {
+  return chain.map((node, index) => (index > 0 || node.items.length === 0 ? "" : node.items[0]?.value ?? ""));
 }
