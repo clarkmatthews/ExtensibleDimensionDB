@@ -59,3 +59,23 @@ describe("record links", () => {
     expect(storedToDisplay(field, stored)).toBe("ACME-01, BOLT-07");
   });
 });
+
+describe("workflows and record types", async () => {
+  const { appliesToRecordType } = await import("@/lib/workflow");
+  const category = (recordTypeId: string) => ({ category: { recordTypeId } });
+  const trigger = (recordTypeId: string) => ({ field: { category: { recordTypeId } } });
+
+  it("applies a workflow limited to dimensions only to the types that own them", () => {
+    expect(appliesToRecordType({ categories: [category("location")], triggers: [] }, "location")).toBe(true);
+    expect(appliesToRecordType({ categories: [category("location")], triggers: [] }, "vendor")).toBe(false);
+  });
+
+  it("applies a workflow with trigger attributes only to their types", () => {
+    expect(appliesToRecordType({ categories: [], triggers: [trigger("location")] }, "vendor")).toBe(false);
+    expect(appliesToRecordType({ categories: [], triggers: [trigger("vendor")] }, "vendor")).toBe(true);
+  });
+
+  it("applies an unscoped workflow to every type", () => {
+    expect(appliesToRecordType({ categories: [], triggers: [] }, "vendor")).toBe(true);
+  });
+});
