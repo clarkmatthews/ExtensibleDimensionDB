@@ -7,6 +7,7 @@ import { canEditModule, canSeeValue, canViewModule, categoryAccess, fieldAccess,
 import { prisma } from "@/lib/prisma";
 import { linkedFrom, listRecordTypes, recordLabels, withLinkOptions } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
+import { manualProcessesFor } from "@/lib/workflow";
 import { loadFieldChoices } from "@/lib/list-items";
 import { archiveRecord, restoreRecord, startWorkflow } from "@/lib/store-actions";
 import { localDateInput, storedToInput } from "@/lib/values";
@@ -120,10 +121,7 @@ export default async function StorePage({
       orderBy: { createdAt: "desc" },
       take: 20,
     }),
-    prisma.workflowProcess.findMany({
-      where: { isActive: true, manual: true, kind: "TASK" },
-      orderBy: { name: "asc" },
-    }),
+    manualProcessesFor(location.recordTypeId),
   ]);
   const [types, inbound] = await Promise.all([listRecordTypes(), linkedFrom(location.id)]);
   const recordType = types.find((type) => type.id === location.recordTypeId);
@@ -196,7 +194,10 @@ export default async function StorePage({
           <article key={row.id} className="panel px-4 py-3 text-sm">
             <p>{row.field.category.name} · {row.field.friendlyName}</p>
             <p className="mt-1"><span className="text-muted">{row.oldValue || "blank"}</span>{" → "}{row.newValue || "blank"}</p>
-            <p className="mt-1 text-xs text-muted">{row.user.name} · {row.createdAt.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-muted">
+              {row.user.name} · {row.createdAt.toLocaleString()}
+              {row.proposalId ? " · from an approved AI proposal" : ""}
+            </p>
           </article>
         ))}
         <p className="text-sm">

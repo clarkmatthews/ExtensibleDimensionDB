@@ -110,16 +110,19 @@ export async function runWorkflows(input: {
   created: boolean;
   changes: SavedChange[];
 }) {
+  const location = await prisma.location.findUnique({ where: { id: input.locationId }, select: { recordTypeId: true } });
+  if (!location) return;
   const processes = await prisma.workflowProcess.findMany({
     where: { isActive: true },
     include: {
-      categories: true,
-      triggers: true,
+      categories: { include: { category: { select: { recordTypeId: true } } } },
+      triggers: { include: { field: { select: { category: { select: { recordTypeId: true } } } } } },
       recipients: true,
       steps: { orderBy: { sortOrder: "asc" } },
     },
   });
   for (const process of processes) {
+    if (!appliesToRecordType(process, location.recordTypeId)) continue;
     const categoryIds = new Set(process.categories.map((row) => row.categoryId));
     const inScope = (categoryId: string) => categoryIds.size === 0 || categoryIds.has(categoryId);
     const matched = input.changes.filter((change) => {
@@ -156,12 +159,46 @@ export async function runWorkflows(input: {
   }
 }
 
-export async function startManualProcess(locationId: string, processId: string, userId: string) {
-  const process = await prisma.workflowProcess.findFirst({
-    where: { id: processId, isActive: true, manual: true, kind: "TASK" },
-    include: { steps: { orderBy: { sortOrder: "asc" } } },
+type ScopedProcess = {
+  categories: { category: { recordTypeId: string } }[];
+  triggers: { field: { category: { recordTypeId: string } } }[];
+};
+
+/**
+ * Whether a workflow applies to records of a type. A workflow limited to dimensions applies to
+ * the types that own them; one with trigger attributes applies to their types; a workflow with
+ * neither applies to every record.
+ */
+export function appliesToRecordType(process: ScopedProcess, recordTypeId: string) {
+  if (process.categories.length) return process.categories.some((row) => row.category.recordTypeId === recordTypeId);
+  if (process.triggers.length) return process.triggers.some((row) => row.field.category.recordTypeId === recordTypeId);
+  return true;
+}
+
+/** Active manual workflows that can be started on records of this type. */
+export async function manualProcessesFor(recordTypeId: string) {
+  const processes = await prisma.workflowProcess.findMany({
+    where: { isActive: true, manual: true, kind: "TASK" },
+    include: {
+      categories: { include: { category: { select: { recordTypeId: true } } } },
+      triggers: { include: { field: { select: { category: { select: { recordTypeId: true } } } } } },
+    },
+    orderBy: { name: "asc" },
   });
-  if (!process) return "That workflow cannot be started from the record.";
+  return processes.filter((process) => appliesToRecordType(process, recordTypeId));
+}
+
+export async function startManualProcess(locationId: string, processId: string, userId: string) {
+  const location = await prisma.location.findUnique({ where: { id: locationId }, select: { recordTypeId: true } });
+  if (!location) return "This record no longer exists.";
+  const allowed = await manualProcessesFor(location.recordTypeId);
+  const process = allowed.some((item) => item.id === processId)
+    ? await prisma.workflowProcess.findFirst({
+        where: { id: processId, isActive: true, manual: true, kind: "TASK" },
+        include: { steps: { orderBy: { sortOrder: "asc" } } },
+      })
+    : null;
+  if (!process) return "That workflow cannot be started from this record.";
   return startTaskProcess(process, locationId, userId);
 }
 
