@@ -37,9 +37,7 @@ The dimension list is the working grid. Search, filter each attribute, choose wh
 
 <img width="1220" height="733" alt="image" src="https://github.com/user-attachments/assets/e4a3d40b-cc69-4950-af46-05d9b6623dc8" />
 
-![Choosing visible attributes](docs/screenshots/dimensions-attributes.png)
-
-A record is edited by dimension. List attributes that follow another list, such as city after state, reload when the parent value changes. The created-date attribute is filled from the record and is read only. The page also shows the latest edits for that record and can start a workflow that allows a manual start.
+A record is edited by dimension. List attributes that follow another list, such as city after state, reload when the parent value changes. List nesting can be more than 2 deep. The created-date attribute is filled from the record and is read only. The page also shows the latest edits for that record and can start a workflow that allows a manual start.
 
 ![Record](docs/screenshots/record.png)
 
