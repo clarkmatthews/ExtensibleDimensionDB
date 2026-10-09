@@ -133,7 +133,10 @@ export default async function ChangelogPage({
               {" → "}
               <span>{row.newValue || "blank"}</span>
             </p>
-            <p className="mt-1 text-xs text-muted">{row.user.name} · {row.createdAt.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-muted">
+              {row.user.name} · {row.createdAt.toLocaleString()}
+              {row.proposalId ? " · from an approved AI proposal" : ""}
+            </p>
           </article>
         ))}
       </div>

@@ -60,6 +60,8 @@ enum AppModule {
   AUDIT
   WEBHOOKS
   IMPORT
+  AI_ACCESS
+  PROPOSALS
 }
 
 enum ApiFormat {
@@ -156,6 +158,57 @@ model User {
   workflowRecipients WorkflowRecipient[]
   sessions           Session[]
   auditEntries       AuditLog[]
+  accessTokens       AccessToken[]
+  proposals          ChangeProposal[] @relation("Proposer")
+  reviews            ChangeProposal[] @relation("Reviewer")
+}
+
+/// A personal token that lets an AI assistant use the hosted MCP endpoint as this person.
+model AccessToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  /// SHA-256 of the token. The token itself is shown once and never stored.
+  tokenHash  String    @unique
+  /// The first characters of the token, so people can tell their tokens apart.
+  prefix     String
+  /// "read" always; "propose" lets the assistant submit changes for review.
+  scopes     String[]
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  proposals  ChangeProposal[]
+
+  @@index([userId])
+}
+
+/// A change an AI assistant proposed. Nothing is saved until a reviewer approves it.
+model ChangeProposal {
+  id            String      @id @default(cuid())
+  recordTypeId  String
+  /// The record to change, or null to create a new record.
+  locationId    String?
+  proposedById  String
+  proposedBy    User        @relation("Proposer", fields: [proposedById], references: [id])
+  tokenId       String?
+  token         AccessToken? @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  reason        String      @default("")
+  /// [{ fieldId, key, name, from, to, input }]: display values before and after, and the form input to save.
+  changes       Json
+  status        String      @default("PENDING")
+  reviewerId    String?
+  reviewer      User?       @relation("Reviewer", fields: [reviewerId], references: [id])
+  reviewNote    String      @default("")
+  reviewedAt    DateTime?
+  appliedLocationId String?
+  error         String      @default("")
+  createdAt     DateTime    @default(now())
+  fieldChanges  FieldChange[]
+
+  @@index([status, createdAt])
+  @@index([proposedById])
 }
 
 /// One signed-in browser. Signing out revokes it; a password change or deactivation revokes all of them.
@@ -682,6 +735,9 @@ model FieldChange {
   oldValue      String         @default("")
   newValue      String         @default("")
   createdAt     DateTime       @default(now())
+  /// Set when the change came from an approved AI proposal.
+  proposalId    String?
+  proposal      ChangeProposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
   notifications Notification[]
   tasks         Task[]
 

@@ -49,13 +49,32 @@ An AI model needs search and a split between standing context and current facts.
 
 ## MCP contract
 
-The contract is a read-only MCP server beside the app. Tool and resource text speaks only in dimensions, attributes, and records, so it stays accurate for any subject the user defines.
+The contract is an MCP server. Tool and resource text speaks only in record types, dimensions, attributes, and records, so it stays accurate for any subject the user defines. Reading tools never write. The only write path is a proposal that a person approves.
 
-The server signs in as a dedicated view-only user. It sees only what that user can view on the Permissions page. A later write tool, if one is added, must use the same validation as the record form. This contract does not write.
+Every answer is limited to what one person can view on the Permissions page. There are two ways to run it.
 
-### Run the server
+### Hosted endpoint, one token per person
 
-Set `MCP_USER_EMAIL` in `.env` to an active user. Create that person on Users and grant view on the dimensions the model should read. An administrator account also works and can view every attribute. The server still has no write tools.
+The app serves MCP over Streamable HTTP at `/api/mcp`. Each request carries a personal token from **AI access** as `Authorization: Bearer edb_…`, and the tools answer as that person. Only a hash of each token is stored; tokens can expire, and their owner or an administrator can revoke them. A person needs view access to **AI access** to use a token.
+
+```bash
+claude mcp add --transport http dimension-knowledge https://your-host/api/mcp --header "Authorization: Bearer edb_…"
+```
+
+The endpoint is stateless and answers in JSON, so it works behind ordinary load balancers.
+
+### Proposals: governed write-back
+
+A token created with **Allow proposing changes** also gets two tools:
+
+- `propose_change` takes `record_id` (or `record_type` for a new record), `changes` (attribute key or display name mapped to the new value), and `reason`. Values go through the same conversion as CSV import (choice labels, Yes/No, MM/DD/YYYY, linked records by identifier) and the same validation as the record form. Errors come back to the model at once. A valid proposal is stored and nothing is saved.
+- `my_proposals` lists the latest proposals made with this account and their status.
+
+People with edit access to **AI proposals** review the queue. A reviewer sees each attribute's current value, the proposed value, and whether the record changed since the proposal. Approving saves the change through the record form's save path: it is validated again, written to the changelog as the token's owner and marked as coming from the proposal, and runs workflows and webhooks. A reviewer can only approve attributes they may update, and cannot approve proposals made with their own token unless they are an administrator. Every decision is in the Audit log.
+
+### Local server
+
+`npm run mcp` runs the read tools over stdio as one user, for a model on the same machine. Set `MCP_USER_EMAIL` in `.env` to an active user. Create that person on Users and grant view on the dimensions the model should read. An administrator account also works and can view every attribute. The local server has no write tools.
 
 ```bash
 npm run mcp
