@@ -15,6 +15,10 @@ const contentSecurityPolicy = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // CSV import uploads files of up to 5 MB through a server action. Other actions stay small.
+    serverActions: { bodySizeLimit: "6mb" },
+  },
   async headers() {
     return [
       {

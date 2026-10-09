@@ -57,6 +57,8 @@ enum AppModule {
   WORKFLOWS
   NOTICES
   AUDIT
+  WEBHOOKS
+  IMPORT
 }
 
 enum ApiFormat {
@@ -565,6 +567,57 @@ model LoginLock {
   failureCount Int       @default(0)
   blockedUntil DateTime?
   updatedAt    DateTime  @updatedAt
+}
+
+/// An outside URL that receives signed JSON when records change.
+model WebhookEndpoint {
+  id          String            @id @default(cuid())
+  name        String
+  url         String
+  /// Signing secret, encrypted with AUTH_SECRET. Shown once when created.
+  secret      String
+  secretHint  String            @default("")
+  /// record.created, record.updated, record.archived, record.restored
+  events      String[]
+  /// Dimensions whose changes are sent. Empty means every dimension.
+  categoryIds String[]
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  deliveries  WebhookDelivery[]
+}
+
+/// One event for one endpoint. Retried with growing delays until delivered or failed.
+model WebhookDelivery {
+  id            String          @id @default(cuid())
+  endpointId    String
+  endpoint      WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  event         String
+  payload       Json
+  status        String          @default("PENDING")
+  attempts      Int             @default(0)
+  nextAttemptAt DateTime        @default(now())
+  lastStatus    Int?
+  lastError     String          @default("")
+  createdAt     DateTime        @default(now())
+  deliveredAt   DateTime?
+
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, createdAt])
+}
+
+/// A CSV file uploaded for import, kept between the preview and the confirmation.
+model ImportJob {
+  id         String    @id @default(cuid())
+  userId     String
+  fileName   String
+  csv        String
+  status     String    @default("PREVIEWED")
+  summary    Json?
+  createdAt  DateTime  @default(now())
+  appliedAt  DateTime?
+
+  @@index([userId, createdAt])
 }
 
 /// Background jobs that must run on one server only, and when they last ran.

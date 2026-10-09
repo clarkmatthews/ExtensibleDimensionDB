@@ -11,6 +11,7 @@ import { buildStoreTargets } from "@/lib/store-targets";
 import { getCurrentUser } from "@/lib/session";
 import { choicesForList } from "@/lib/list-items";
 import { displayRaw, displayStored, inputToStored, rulesFromField } from "@/lib/values";
+import { enqueueRecordEvent } from "@/lib/webhooks";
 import { runWorkflows, type SavedChange } from "@/lib/workflow";
 import {
   columnKeyError,
@@ -430,6 +431,7 @@ export async function applyDefaultToStores(fieldId: string, locationIds: string[
     });
     for (const item of changed) {
       await runWorkflows({ locationId: item.locationId, userId: user.id, userName: user.name, created: false, changes: [item.change] });
+      await enqueueRecordEvent({ event: "record.updated", locationId: item.locationId, actorName: user.name, changes: [item.change] });
     }
     revalidatePath("/dimensions");
     revalidatePath("/changelog");

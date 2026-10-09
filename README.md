@@ -56,6 +56,10 @@ A record is edited by dimension. List attributes that follow another list, such 
 
 ![New record](docs/screenshots/new-record.png)
 
+## Import
+
+**Import** on the Dimension page creates and updates records from a CSV file. Headers are attribute keys or display names, so a file from Export CSV can be edited and imported back. When the file includes the unique identifier, matching rows update existing records and the rest create new ones. Every row is checked with the same rules as the record form first, and the preview shows how many rows will be created, updated, or skipped, with the reason for each error, before anything is saved. Imported changes are written to the Changelog and sent to webhooks; running workflows for them is optional.
+
 ## Action report
 
 The action report reviews actions and the history of what was done on them. Filter by department, group, user, dates, and dimension identifier. Open actions can be postponed or suspended from this report.
@@ -134,6 +138,8 @@ Every saved attribute change is recorded with the old value, the new value, the 
 **Email Config** stores the SMTP server, port, security (none, STARTTLS, or TLS), username, and password. The password is encrypted in the database and is not shown again after it is saved. Messages are always stored in the app, including when email is off.
 
 ![Email configuration](docs/screenshots/email.png)
+
+**Webhooks** send a signed JSON message to another system when records are created, updated, archived, or restored, optionally limited to certain dimensions. Each request carries an `X-Dimension-Signature` header (`t=<unix time>,v1=<HMAC-SHA256 of "t.body">`) so the receiver can verify it. Failed deliveries are retried for about a day, and each webhook shows its recent deliveries with a manual retry and a **Send test** button. For safety, webhooks only reach public `https://` addresses; set `WEBHOOK_ALLOW_PRIVATE=true` to allow local or internal targets.
 
 **Audit log** lists every successful administrative change: data definitions, lists, users, groups, permissions, workflows, API endpoints, email and site settings, sign-ins, and sign-out-everywhere. Each entry shows who made it, when, and the submitted values. Passwords and secrets are never recorded. Grant access to it like any other screen on Permissions.
 
