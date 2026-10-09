@@ -59,7 +59,7 @@ export default async function LoginPage({
         {sso ? (
           <>
             <p className="mt-4 text-center text-xs text-muted">or</p>
-            <a className="btn-quiet mt-2 block w-full text-center" href="/api/auth/oidc/start">{sso.label}</a>
+            <a className="btn-quiet mt-2 w-full justify-center py-2 font-semibold" href="/api/auth/oidc/start">{sso.label}</a>
           </>
         ) : null}
       </form>
