@@ -18,8 +18,6 @@ The name in the header, on the sign-in page, and in the browser title is a site 
 
 The first account is created by the database seed as `admin@local`. Set `ADMIN_PASSWORD` before that first seed, or read the one-time password the seed prints. Later password changes stay in the database.
 
-![Sign in](docs/screenshots/login.png)
-
 ## Navigation
 
 The menu groups the screens into the main work area, Form Config, People Config, and Settings.
