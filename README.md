@@ -1,6 +1,6 @@
 # Extensible Dimension Database
 
-A metadata-driven database and web application for records whose shape is defined in the product, not in code. Administrators create dimensions and attributes, choice lists, people, access rules, and workflows. Everyone else works with the records those definitions produce.
+A metadata-driven extensible database and web application for records whose shape is defined in the product, not in code. Administrators create dimensions and attributes, choice lists, people, access rules, and workflows. Everyone else works with the records those definitions produce.
 
 The name in the header, on the sign-in page, and in the browser title is a site setting. The screenshots below are from a local site named **Dimension Extender**.
 
@@ -11,7 +11,8 @@ The name in the header, on the sign-in page, and in the browser title is a site 
 - **Lists** supply choices. A list can follow another list, so cities can follow states, and new parent-child catalogs can be added the same way.
 - **People** are users, departments, and groups. Navigation and record access are granted to a user, a group, or a department. A user grant overrides a group grant, which overrides a department grant.
 - **Workflows** are either a notification or an action sequence. They can start when a record is created, when an attribute changes, or when someone starts one by hand.
-- **Sharing** publishes selected attributes as JSON or XML behind a URL and a secret.
+- **Sharing** a configurable API publishes selected attributes as JSON or XML behind a URL and a secret.
+- **AI Knowledge** a read-only MCP server driven by user to access the information within their permission scope AND/OR an easy markdown file export from within the application to correlate with the AI model you choose.
 
 ## Sign in
 
