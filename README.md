@@ -35,7 +35,7 @@ The dashboard lists open actions assigned to you or to a group you belong to, th
 
 The dimension list is the working grid. Search, filter each attribute, choose which attributes are visible, export CSV, and open a record. **New Record** starts a blank record.
 
-![Dimension list](docs/screenshots/dimensions.png)
+<img width="1220" height="733" alt="image" src="https://github.com/user-attachments/assets/e4a3d40b-cc69-4950-af46-05d9b6623dc8" />
 
 ![Choosing visible attributes](docs/screenshots/dimensions-attributes.png)
 
