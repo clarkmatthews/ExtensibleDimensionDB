@@ -194,7 +194,10 @@ export default async function StorePage({
           <article key={row.id} className="panel px-4 py-3 text-sm">
             <p>{row.field.category.name} · {row.field.friendlyName}</p>
             <p className="mt-1"><span className="text-muted">{row.oldValue || "blank"}</span>{" → "}{row.newValue || "blank"}</p>
-            <p className="mt-1 text-xs text-muted">{row.user.name} · {row.createdAt.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-muted">
+              {row.user.name} · {row.createdAt.toLocaleString()}
+              {row.proposalId ? " · from an approved AI proposal" : ""}
+            </p>
           </article>
         ))}
         <p className="text-sm">
