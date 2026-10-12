@@ -221,7 +221,8 @@ model OauthClient {
   codes        OauthCode[]
 }
 
-/// One assistant sign-in. View and propose can be turned off without issuing a new token.
+/// One assistant sign-in. Propose can be turned on or off without issuing a new token. A new sign-in
+/// from the same assistant replaces the person's earlier connection to it.
 model OauthConnection {
   id           String              @id @default(cuid())
   userId       String
@@ -233,11 +234,14 @@ model OauthConnection {
   allowRead    Boolean             @default(true)
   allowPropose Boolean             @default(false)
   createdAt    DateTime            @default(now())
+  /// When an assistant last called the endpoint through this connection, refreshed at most every few minutes.
+  lastUsedAt   DateTime?
   revokedAt    DateTime?
   tokens       AccessToken[]
   refreshTokens OauthRefreshToken[]
 
   @@index([userId])
+  @@index([userId, product])
 }
 
 /// A short-lived authorization code. Only its hash is stored, and it can be used once.

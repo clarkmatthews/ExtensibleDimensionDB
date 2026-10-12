@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { writeAudit } from "@/lib/audit";
 import { OAUTH_CORS, publicOrigin } from "@/lib/mcp-oauth";
 import { exchangeAuthorizationCode, exchangeRefreshToken } from "@/lib/mcp-oauth-flow";
 
@@ -40,7 +41,9 @@ export async function POST(request: NextRequest) {
       resource,
       origin,
     });
-    return result.ok ? NextResponse.json(result.token, { headers: OAUTH_CORS }) : failed(result.error);
+    if (!result.ok) return failed(result.error);
+    if (result.replaced) await writeAudit("ai.oauthReplace", { product: result.product, replaced: result.replaced }, result.userId);
+    return NextResponse.json(result.token, { headers: OAUTH_CORS });
   }
   if (grant === "refresh_token") {
     const result = await exchangeRefreshToken({
@@ -49,7 +52,13 @@ export async function POST(request: NextRequest) {
       resource,
       origin,
     });
-    return result.ok ? NextResponse.json(result.token, { headers: OAUTH_CORS }) : failed(result.error);
+    if (!result.ok) {
+      if ("reused" in result && result.reused) {
+        await writeAudit("ai.oauthRefreshReuse", { connectionId: result.connectionId }, result.userId);
+      }
+      return failed(result.error);
+    }
+    return NextResponse.json(result.token, { headers: OAUTH_CORS });
   }
   return failed("unsupported_grant_type");
 }

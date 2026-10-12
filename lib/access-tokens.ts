@@ -38,9 +38,6 @@ export async function authenticateToken(header: string | null): Promise<TokenIde
   });
   const now = Date.now();
   if (!row || row.revokedAt || (row.expiresAt && row.expiresAt.getTime() <= now) || !row.user.isActive) return null;
-  if (!row.lastUsedAt || now - row.lastUsedAt.getTime() > TOUCH_MS) {
-    await prisma.accessToken.update({ where: { id: row.id }, data: { lastUsedAt: new Date(now) } }).catch(() => undefined);
-  }
   const access = await loadAccess(row.user);
   let scopes = row.scopes;
   if (row.connectionId) {
@@ -50,6 +47,13 @@ export async function authenticateToken(header: string | null): Promise<TokenIde
     const live = connectionScopes(row.connection, settings, personCanPropose);
     if (!live) return null;
     scopes = live;
+  }
+  if (!row.lastUsedAt || now - row.lastUsedAt.getTime() > TOUCH_MS) {
+    const at = new Date(now);
+    await prisma.accessToken.update({ where: { id: row.id }, data: { lastUsedAt: at } }).catch(() => undefined);
+    if (row.connectionId) {
+      await prisma.oauthConnection.update({ where: { id: row.connectionId }, data: { lastUsedAt: at } }).catch(() => undefined);
+    }
   }
   return { access, tokenId: row.id, scopes, userName: row.user.name };
 }

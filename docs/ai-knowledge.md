@@ -80,9 +80,11 @@ ChatGPT and the Grok API call the server from the internet. The address has to b
 
 The endpoint is stateless and answers in JSON, so it works behind ordinary load balancers.
 
-ChatGPT, Claude on the web, and Grok can sign in with OAuth instead of a pasted token. An administrator turns each assistant on from **AI access**. The assistant is sent to `/oauth/authorize` with PKCE. The person signs in, then allows view records and, optionally, proposing changes. Those two switches stay on the connection and apply on the next request. Turning an assistant off stops its connections. Pasted tokens are unchanged.
+ChatGPT, Claude on the web, and Grok can sign in with OAuth instead of a pasted token. An administrator turns each assistant on under **Administration** on **AI access**. The assistant is sent to `/oauth/authorize` with PKCE. The person signs in and chooses **View only** or **View and propose**. The choice stays on the connection: the person can change it on AI access, and it applies on the assistant's next request. Turning an assistant off stops its connections. Pasted tokens are unchanged.
 
-A request without a token receives `WWW-Authenticate` with the protected-resource metadata URL. The authorization server metadata is at `/.well-known/oauth-authorization-server`. Clients are public, codes are single use, and refresh tokens rotate. Only redirect hosts for an enabled assistant are accepted.
+Connecting the same assistant again replaces the person's earlier connection to it, so each person has at most one connection per assistant.
+
+A request without a token receives `WWW-Authenticate` with the protected-resource metadata URL. The authorization server metadata is at `/.well-known/oauth-authorization-server`. Clients are public, codes are single use, and refresh tokens rotate. Only redirect hosts for an enabled assistant are accepted. If a refresh token that was already rotated comes back more than a minute later, the connection is ended and the assistant must sign in again, because that means a copy of the token is in use somewhere else. The housekeeping job, which runs every six hours, removes expired assistant tokens (except ones a proposal points at), used sign-in codes, and expired refresh tokens.
 
 ### Proposals: governed write-back
 

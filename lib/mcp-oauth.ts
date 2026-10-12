@@ -19,6 +19,22 @@ export type OauthSettings = { allowChatGpt: boolean; allowClaude: boolean; allow
 
 export const OAUTH_OFF: OauthSettings = { allowChatGpt: false, allowClaude: false, allowGrok: false };
 
+/** The one access choice people make for an assistant or a token. Viewing is always included. */
+export type AccessChoice = "view" | "propose";
+
+export const ACCESS_LABELS: Record<AccessChoice, string> = {
+  view: "View only",
+  propose: "View and propose",
+};
+
+export function accessChoice(value: unknown): AccessChoice {
+  return value === "propose" ? "propose" : "view";
+}
+
+export function accessLabel(canPropose: boolean) {
+  return ACCESS_LABELS[canPropose ? "propose" : "view"];
+}
+
 export const OAUTH_QUERY_COOKIE = "oauth_ai";
 const QUERY_TTL_MS = 10 * 60_000;
 const QUERY_MAX = 2000;

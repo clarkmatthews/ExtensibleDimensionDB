@@ -18,6 +18,8 @@ const CODE_TTL_MS = 60_000;
 const ACCESS_TTL_MS = 60 * 60_000;
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60_000;
 const METADATA_MAX = 65_536;
+/** A refresh token presented again within this window is treated as a retry, not a stolen copy. */
+const REUSE_GRACE_MS = 60_000;
 
 export async function loadOauthSettings() {
   const row = await prisma.aiOauthSettings.findUnique({ where: { id: "default" } });
@@ -66,6 +68,15 @@ export async function resolveOauthClient(request: AuthorizeRequest, fetchImpl: t
   }
   if (!productEnabled(settings, client.product)) return { ok: false as const, reason: "disabled" as const };
   return { ok: true as const, client, product: client.product };
+}
+
+/** Ends connections and every token they were issued. Returns how many were still active. */
+export async function revokeConnections(ids: string[], now = new Date()) {
+  if (!ids.length) return 0;
+  const ended = await prisma.oauthConnection.updateMany({ where: { id: { in: ids }, revokedAt: null }, data: { revokedAt: now } });
+  await prisma.accessToken.updateMany({ where: { connectionId: { in: ids }, revokedAt: null }, data: { revokedAt: now } });
+  await prisma.oauthRefreshToken.updateMany({ where: { connectionId: { in: ids }, revokedAt: null }, data: { revokedAt: now } });
+  return ended.count;
 }
 
 export async function registerOauthClient(body: unknown) {
@@ -195,7 +206,13 @@ export async function exchangeAuthorizationCode(input: {
       allowPropose,
     },
   });
-  return { ok: true as const, token: await issueAccessToken({ userId: row.userId, connectionId: connection.id, name: row.client.name, allowPropose }) };
+  // Connecting the same assistant again replaces the earlier connection instead of adding a second one.
+  const earlier = await prisma.oauthConnection.findMany({
+    where: { userId: row.userId, product: row.client.product, revokedAt: null, id: { not: connection.id } },
+    select: { id: true },
+  });
+  await revokeConnections(earlier.map((item) => item.id));
+  return { ok: true as const, userId: row.userId, product: row.client.product, replaced: earlier.length, token: await issueAccessToken({ userId: row.userId, connectionId: connection.id, name: row.client.name, allowPropose }) };
 }
 
 /** Rotates a refresh token. View and propose are read from the connection, so a switch applies on the next token. */
@@ -205,7 +222,14 @@ export async function exchangeRefreshToken(input: { refreshToken: string; client
     where: { tokenHash },
     include: { connection: { include: { client: true, user: { include: { groups: { include: { group: true } } } } } } },
   });
-  if (!row || row.revokedAt || row.expiresAt.getTime() <= Date.now()) return { ok: false as const, error: "invalid_grant" };
+  if (!row || row.expiresAt.getTime() <= Date.now()) return { ok: false as const, error: "invalid_grant" };
+  if (row.revokedAt) {
+    // A rotated refresh token came back. Outside a short retry window that means a copy is in use
+    // elsewhere, so the whole connection ends and the assistant has to sign in again.
+    const stolen = !row.connection.revokedAt && Date.now() - row.revokedAt.getTime() > REUSE_GRACE_MS;
+    if (stolen) await revokeConnections([row.connectionId]);
+    return { ok: false as const, error: "invalid_grant", reused: stolen, connectionId: row.connectionId, userId: row.connection.userId };
+  }
   const connection = row.connection;
   if (connection.revokedAt || !connection.allowRead || connection.client.clientId !== input.clientId) return { ok: false as const, error: "invalid_grant" };
   if (input.resource && !resourceMatches(input.resource, input.origin)) return { ok: false as const, error: "invalid_target" };
@@ -221,4 +245,27 @@ export async function exchangeRefreshToken(input: { refreshToken: string; client
   });
   if (claimed.count !== 1) return { ok: false as const, error: "invalid_grant" };
   return { ok: true as const, token: await issueAccessToken({ userId: connection.userId, connectionId: connection.id, name: connection.name, allowPropose }) };
+}
+
+/**
+ * Removes OAuth rows nobody needs any more. Expired access tokens go unless a proposal points at them,
+ * so the review queue can still say which assistant proposed a change. Rotated refresh tokens stay
+ * until they expire, so a stolen copy is still recognised when it comes back.
+ */
+export async function cleanUpOauth(now = new Date()) {
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60_000);
+  const [tokens, codes, refresh] = await Promise.all([
+    prisma.accessToken.deleteMany({
+      where: {
+        connectionId: { not: null },
+        OR: [{ expiresAt: { lt: dayAgo } }, { revokedAt: { lt: dayAgo } }],
+        proposals: { none: {} },
+      },
+    }),
+    prisma.oauthCode.deleteMany({ where: { expiresAt: { lt: dayAgo } } }),
+    prisma.oauthRefreshToken.deleteMany({
+      where: { OR: [{ expiresAt: { lt: now } }, { connection: { revokedAt: { lt: dayAgo } } }] },
+    }),
+  ]);
+  return { tokens: tokens.count, codes: codes.count, refreshTokens: refresh.count };
 }
