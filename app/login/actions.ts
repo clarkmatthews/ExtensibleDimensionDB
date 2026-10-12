@@ -1,10 +1,11 @@
 "use server";
 
 import { compare } from "bcryptjs";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { clientAddress } from "@/lib/client-address";
 import { clearLoginFailures, loginBlockedUntil, noteLoginFailure } from "@/lib/login-throttle";
+import { oauthResumePath, OAUTH_QUERY_COOKIE } from "@/lib/mcp-oauth";
 import { writeAudit } from "@/lib/audit";
 import { loadSsoSettings } from "@/lib/sso";
 import { prisma } from "@/lib/prisma";
@@ -38,7 +39,7 @@ export async function login(formData: FormData) {
   if (sso?.enabled && sso.passwordAdminOnly && !user.isAdmin) redirect("/login?error=sso-only");
   await setSession(user.id);
   await writeAudit("session.signIn", { address }, user.id);
-  redirect("/dashboard");
+  redirect(oauthResumePath((await cookies()).get(OAUTH_QUERY_COOKIE)?.value) ?? "/dashboard");
 }
 
 export async function logout() {

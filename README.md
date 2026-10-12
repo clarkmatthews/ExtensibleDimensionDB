@@ -71,7 +71,7 @@ The seed creates the administrator, the Location record type with its starting d
 
 ### Finding your way around
 
-The menu groups the screens into the main work area, Form Config, People Config, and Settings. Each person sees only the screens they have been granted.
+The menu groups the screens into the main work area, Dimension Config, People Config, and Settings. Each person sees only the screens they have been granted.
 
 ![The menu](docs/screenshots/menu.png)
 

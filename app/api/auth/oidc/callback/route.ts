@@ -3,6 +3,7 @@ import { hash } from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
 import { writeAudit } from "@/lib/audit";
 import { decryptSecret } from "@/lib/mail";
+import { oauthResumePath, OAUTH_QUERY_COOKIE } from "@/lib/mcp-oauth";
 import { prisma } from "@/lib/prisma";
 import { setSession } from "@/lib/session";
 import { decideSso, FLOW_COOKIE, loadSsoSettings, openFlow, providerConfig, redirectUri, type SsoClaims, type SsoReason } from "@/lib/sso";
@@ -71,7 +72,8 @@ export async function GET(request: NextRequest) {
 
   await setSession(userId);
   await writeAudit("session.ssoSignIn", { provider: settings.issuer }, userId);
-  const response = NextResponse.redirect(new URL("/dashboard", request.url));
+  const resume = oauthResumePath(request.cookies.get(OAUTH_QUERY_COOKIE)?.value);
+  const response = NextResponse.redirect(new URL(resume ?? "/dashboard", request.url));
   response.cookies.delete({ name: FLOW_COOKIE, path: "/api/auth/oidc" });
   return response;
 }

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { loadAccess, type AccessContext } from "@/lib/permissions";
+import { canEditModule, loadAccess, type AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { connectionScopes, OAUTH_OFF } from "@/lib/mcp-oauth";
 
 /** Scopes a token can carry. Every token can read; "propose" also lets it submit changes for review. */
 export const TOKEN_SCOPES = ["read", "propose"] as const;
@@ -30,12 +31,25 @@ export async function authenticateToken(header: string | null): Promise<TokenIde
   if (!match || !match[1].startsWith(PREFIX)) return null;
   const row = await prisma.accessToken.findUnique({
     where: { tokenHash: hashToken(match[1]) },
-    include: { user: { include: { groups: { include: { group: true } } } } },
+    include: {
+      user: { include: { groups: { include: { group: true } } } },
+      connection: true,
+    },
   });
   const now = Date.now();
   if (!row || row.revokedAt || (row.expiresAt && row.expiresAt.getTime() <= now) || !row.user.isActive) return null;
   if (!row.lastUsedAt || now - row.lastUsedAt.getTime() > TOUCH_MS) {
     await prisma.accessToken.update({ where: { id: row.id }, data: { lastUsedAt: new Date(now) } }).catch(() => undefined);
   }
-  return { access: await loadAccess(row.user), tokenId: row.id, scopes: row.scopes, userName: row.user.name };
+  const access = await loadAccess(row.user);
+  let scopes = row.scopes;
+  if (row.connectionId) {
+    if (!row.connection) return null;
+    const settings = (await prisma.aiOauthSettings.findUnique({ where: { id: "default" } })) ?? OAUTH_OFF;
+    const personCanPropose = canEditModule(access, "AI_ACCESS") && canEditModule(access, "STORES");
+    const live = connectionScopes(row.connection, settings, personCanPropose);
+    if (!live) return null;
+    scopes = live;
+  }
+  return { access, tokenId: row.id, scopes, userName: row.user.name };
 }

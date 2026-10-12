@@ -76,6 +76,13 @@ enum MailSecurity {
   TLS
 }
 
+/// An assistant that can sign in with OAuth. Each one is off until an administrator turns it on.
+enum AiProduct {
+  CHATGPT
+  CLAUDE
+  GROK
+}
+
 enum TaskState {
   UNACCEPTED
   ACCEPTED
@@ -162,6 +169,8 @@ model User {
   sessions           Session[]
   auditEntries       AuditLog[]
   accessTokens       AccessToken[]
+  oauthConnections   OauthConnection[]
+  oauthCodes         OauthCode[]
   proposals          ChangeProposal[] @relation("Proposer")
   reviews            ChangeProposal[] @relation("Reviewer")
 }
@@ -182,9 +191,86 @@ model AccessToken {
   lastUsedAt DateTime?
   expiresAt  DateTime?
   revokedAt  DateTime?
+  /// Set when this token was issued by OAuth. View and propose then come from the connection.
+  connectionId String?
+  connection   OauthConnection? @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   proposals  ChangeProposal[]
 
   @@index([userId])
+  @@index([connectionId])
+}
+
+/// Which assistants may start an OAuth sign-in. Missing row means all are off.
+model AiOauthSettings {
+  id           String   @id @default("default")
+  allowChatGpt Boolean  @default(false)
+  allowClaude  Boolean  @default(false)
+  allowGrok    Boolean  @default(false)
+  updatedAt    DateTime @updatedAt
+}
+
+/// A public OAuth client: either registered here, or a client-id metadata document on an allowed host.
+model OauthClient {
+  id           String            @id @default(cuid())
+  clientId     String            @unique
+  name         String
+  redirectUris String[]
+  product      AiProduct
+  createdAt    DateTime          @default(now())
+  connections  OauthConnection[]
+  codes        OauthCode[]
+}
+
+/// One assistant sign-in. View and propose can be turned off without issuing a new token.
+model OauthConnection {
+  id           String              @id @default(cuid())
+  userId       String
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  oauthClientId String
+  client       OauthClient         @relation(fields: [oauthClientId], references: [id], onDelete: Cascade)
+  product      AiProduct
+  name         String
+  allowRead    Boolean             @default(true)
+  allowPropose Boolean             @default(false)
+  createdAt    DateTime            @default(now())
+  revokedAt    DateTime?
+  tokens       AccessToken[]
+  refreshTokens OauthRefreshToken[]
+
+  @@index([userId])
+}
+
+/// A short-lived authorization code. Only its hash is stored, and it can be used once.
+model OauthCode {
+  id            String      @id @default(cuid())
+  codeHash      String      @unique
+  oauthClientId String
+  client        OauthClient @relation(fields: [oauthClientId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  redirectUri   String
+  codeChallenge String
+  resource      String
+  allowRead     Boolean
+  allowPropose  Boolean
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([userId])
+}
+
+/// A refresh token for an OAuth connection. Only its hash is stored. Rotation revokes the previous one.
+model OauthRefreshToken {
+  id           String          @id @default(cuid())
+  tokenHash    String          @unique
+  connectionId String
+  connection   OauthConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime        @default(now())
+
+  @@index([connectionId])
 }
 
 /// A change an AI assistant proposed. Nothing is saved until a reviewer approves it.

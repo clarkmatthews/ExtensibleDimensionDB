@@ -110,7 +110,7 @@ export function Shell({
           </button>
           <p className="flex items-center text-base font-semibold">
             {siteName}
-            <HelpTip text="Form Config defines dimensions, their attributes, and lists. People Config defines who can open each page, who can see and change attributes, and the workflows those people follow. Settings defines the site name, API access, and email delivery." />
+            <HelpTip text="Dimension Config defines dimensions, their attributes, and lists. People Config defines who can open each page, who can see and change attributes, and the workflows those people follow. Settings defines the site name, API access, and email delivery." />
           </p>
           <div className="ml-auto flex items-center gap-4">
             <p className="truncate text-sm text-white">{name}</p>

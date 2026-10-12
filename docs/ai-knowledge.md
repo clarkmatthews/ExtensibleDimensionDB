@@ -61,7 +61,28 @@ The app serves MCP over Streamable HTTP at `/api/mcp`. Each request carries a pe
 claude mcp add --transport http dimension-knowledge https://your-host/api/mcp --header "Authorization: Bearer edb_…"
 ```
 
+Grok on the same machine uses the same header:
+
+```bash
+grok mcp add --transport http dimension-knowledge https://your-host/api/mcp --header "Authorization: Bearer edb_…"
+```
+
+ChatGPT and the Grok API call the server from the internet. The address has to be public. Put this object in the tools array of a Responses API request. The `authorization` value is sent as `Authorization: Bearer`. ChatGPT on the web connects a custom MCP server with OAuth, so a personal token goes through this request.
+
+```json
+{
+  "type": "mcp",
+  "server_label": "dimension-knowledge",
+  "server_url": "https://your-host/api/mcp",
+  "authorization": "edb_…"
+}
+```
+
 The endpoint is stateless and answers in JSON, so it works behind ordinary load balancers.
+
+ChatGPT, Claude on the web, and Grok can sign in with OAuth instead of a pasted token. An administrator turns each assistant on from **AI access**. The assistant is sent to `/oauth/authorize` with PKCE. The person signs in, then allows view records and, optionally, proposing changes. Those two switches stay on the connection and apply on the next request. Turning an assistant off stops its connections. Pasted tokens are unchanged.
+
+A request without a token receives `WWW-Authenticate` with the protected-resource metadata URL. The authorization server metadata is at `/.well-known/oauth-authorization-server`. Clients are public, codes are single use, and refresh tokens rotate. Only redirect hosts for an enabled assistant are accepted.
 
 ### Proposals: governed write-back
 

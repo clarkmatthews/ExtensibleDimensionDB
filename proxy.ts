@@ -10,6 +10,11 @@ export function proxy(request: NextRequest) {
     path.startsWith("/api/alerts") ||
     path.startsWith("/api/share") ||
     path.startsWith("/api/auth/oidc/") ||
+    path.startsWith("/.well-known/oauth-") ||
+    path.startsWith("/oauth/metadata") ||
+    path === "/oauth/register" ||
+    path === "/oauth/token" ||
+    path === "/oauth/authorize" ||
     path === "/api/mcp";
   if (!userId && !isPublic) {
     return NextResponse.redirect(new URL("/login", request.url));

@@ -72,3 +72,52 @@ export async function revokeAccessToken(formData: FormData) {
     back("saved=revoked");
   });
 }
+
+/** Turns ChatGPT, Claude, and Grok sign-in on or off. Administrators only. */
+export async function saveOauthProducts(formData: FormData) {
+  return audited("ai.oauthProducts", [formData], async () => {
+    const { user } = await member();
+    if (!user.isAdmin) back(`error=${encodeURIComponent("Only an administrator can change which assistants can sign in.")}`);
+    const data = {
+      allowChatGpt: formData.get("chatgpt") === "on",
+      allowClaude: formData.get("claude") === "on",
+      allowGrok: formData.get("grok") === "on",
+    };
+    await prisma.aiOauthSettings.upsert({ where: { id: "default" }, create: { id: "default", ...data }, update: data });
+    revalidatePath(PAGE);
+    back("saved=products");
+  });
+}
+
+/** Updates view and propose on the owner's connection. The next request uses the new switches. */
+export async function updateOauthConnection(formData: FormData) {
+  return audited("ai.oauthConnection", [formData], async () => {
+    const { user, access } = await member();
+    const id = String(formData.get("id") ?? "");
+    const connection = await prisma.oauthConnection.findUnique({ where: { id } });
+    if (!connection || connection.userId !== user.id || connection.revokedAt) back(`error=${encodeURIComponent("That connection was not found.")}`);
+    const canPropose = canEditModule(access, "AI_ACCESS") && canEditModule(access, "STORES");
+    await prisma.oauthConnection.update({
+      where: { id },
+      data: { allowRead: formData.get("read") === "on", allowPropose: canPropose && formData.get("propose") === "on" },
+    });
+    revalidatePath(PAGE);
+    back("saved=connection");
+  });
+}
+
+/** Disconnects an assistant and revokes the tokens it was issued. */
+export async function disconnectOauthConnection(formData: FormData) {
+  return audited("ai.oauthDisconnect", [formData], async () => {
+    const { user } = await member();
+    const id = String(formData.get("id") ?? "");
+    const connection = await prisma.oauthConnection.findUnique({ where: { id } });
+    if (!connection || connection.revokedAt || (connection.userId !== user.id && !user.isAdmin)) back(`error=${encodeURIComponent("That connection was not found.")}`);
+    const now = new Date();
+    await prisma.oauthConnection.update({ where: { id }, data: { revokedAt: now } });
+    await prisma.accessToken.updateMany({ where: { connectionId: id, revokedAt: null }, data: { revokedAt: now } });
+    await prisma.oauthRefreshToken.updateMany({ where: { connectionId: id, revokedAt: null }, data: { revokedAt: now } });
+    revalidatePath(PAGE);
+    back("saved=disconnected");
+  });
+}

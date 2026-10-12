@@ -4,14 +4,21 @@ import { CopyButton } from "@/components/copy-button";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { readNewAccessToken } from "@/lib/ai-access-cookie";
-import { createAccessToken, revokeAccessToken } from "@/lib/ai-access-actions";
+import { createAccessToken, disconnectOauthConnection, revokeAccessToken, saveOauthProducts, updateOauthConnection } from "@/lib/ai-access-actions";
+import { enabledProductLabels, AI_PRODUCTS, OAUTH_OFF } from "@/lib/mcp-oauth";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
 export const metadata = { title: "AI access" };
 
-const SAVED: Record<string, string> = { created: "Token created. Copy it now; it is shown only once.", revoked: "Token revoked." };
+const SAVED: Record<string, string> = {
+  created: "Token created. Copy it now; it is shown only once.",
+  revoked: "Token revoked.",
+  products: "Assistant sign-in updated.",
+  connection: "Connection updated.",
+  disconnected: "Assistant disconnected.",
+};
 
 function tokenState(token: { revokedAt: Date | null; expiresAt: Date | null }) {
   if (token.revokedAt) return "Revoked";
@@ -31,28 +38,39 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
   const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
   const proto = headerList.get("x-forwarded-proto") ?? "http";
   const endpoint = `${proto}://${host}/api/mcp`;
-  const [mine, everyone] = await Promise.all([
-    prisma.accessToken.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
+  const [mine, everyone, settings, connections, otherConnections] = await Promise.all([
+    prisma.accessToken.findMany({ where: { userId: user.id, connectionId: null }, orderBy: { createdAt: "desc" } }),
     user.isAdmin
       ? prisma.accessToken.findMany({
-          where: { userId: { not: user.id }, revokedAt: null },
+          where: { userId: { not: user.id }, revokedAt: null, connectionId: null },
           orderBy: { createdAt: "desc" },
           include: { user: { select: { name: true, email: true } } },
+        })
+      : Promise.resolve([]),
+    prisma.aiOauthSettings.findUnique({ where: { id: "default" } }),
+    prisma.oauthConnection.findMany({ where: { userId: user.id, revokedAt: null }, orderBy: { createdAt: "desc" } }),
+    user.isAdmin
+      ? prisma.oauthConnection.findMany({
+          where: { userId: { not: user.id }, revokedAt: null },
+          orderBy: { createdAt: "desc" },
+          include: { user: { select: { name: true } } },
         })
       : Promise.resolve([]),
   ]);
   const shown = fresh && mine.some((token) => token.id === fresh.tokenId) ? fresh.token : null;
   const sample = shown ?? "edb_your_token";
+  const oauth = settings ?? OAUTH_OFF;
+  const enabled = enabledProductLabels(oauth);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="flex items-center text-2xl font-semibold">
           AI access
-          <HelpTip text="Connect an AI assistant such as Claude or Cursor to this database as you. It sees only what you are allowed to see. With proposals turned on, it can suggest changes that wait for a person to approve them." />
+          <HelpTip text="Connect an AI assistant such as Claude, ChatGPT, Grok, or Cursor to this database as you. It sees only what you are allowed to see. With proposals turned on, it can suggest changes that wait for a person to approve them." />
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-muted">
-          Create a token, then add this MCP server to your assistant. The assistant answers from the records and attributes your account can view.
+          Create a token, or let ChatGPT, Claude, or Grok sign in with OAuth. The assistant answers from the records and attributes your account can view.
         </p>
       </div>
       {params.error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{params.error}</p> : null}
@@ -69,19 +87,78 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
       ) : null}
 
       <section className="panel space-y-3 p-4">
+        <h2 className="flex items-center text-lg font-semibold">
+          Assistants that can sign in
+          <HelpTip text="Each assistant is off until an administrator turns it on. Turning one off blocks new sign-ins and stops its existing connections. Pasted tokens keep working." />
+        </h2>
+        {user.isAdmin ? (
+          <form action={saveOauthProducts} className="flex flex-wrap items-center gap-4 text-sm">
+            <label className="inline-flex items-center gap-2"><input type="checkbox" name="chatgpt" defaultChecked={oauth.allowChatGpt} /> ChatGPT</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" name="claude" defaultChecked={oauth.allowClaude} /> Claude</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" name="grok" defaultChecked={oauth.allowGrok} /> Grok</label>
+            <button className="btn" type="submit">Save</button>
+          </form>
+        ) : (
+          <p className="text-sm text-muted">
+            {enabled.length ? `OAuth sign-in is on for ${enabled.join(", ")}.` : "OAuth sign-in is off until an administrator turns on ChatGPT, Claude, or Grok."}
+          </p>
+        )}
+      </section>
+
+      <section className="panel space-y-3 p-4">
         <h2 className="text-lg font-semibold">Connect an assistant</h2>
         <div className="flex flex-wrap items-center gap-3">
           <input className="field flex-1 font-mono" readOnly value={endpoint} />
           <CopyButton value={endpoint} label="Copy URL" />
         </div>
+        <p className="text-sm">
+          For ChatGPT, Claude on the web, or Grok, add this URL and choose OAuth. You sign in here and choose view records and proposing changes. Claude Code, Cursor, and the Grok app can use a personal token instead.
+        </p>
         <p className="text-sm">Claude Code:</p>
         <pre className="overflow-auto rounded-md bg-slate-50 p-3 font-mono text-xs">{`claude mcp add --transport http dimension-knowledge ${endpoint} --header "Authorization: Bearer ${sample}"`}</pre>
+        <p className="text-sm">Grok:</p>
+        <pre className="overflow-auto rounded-md bg-slate-50 p-3 font-mono text-xs">{`grok mcp add --transport http dimension-knowledge ${endpoint} --header "Authorization: Bearer ${sample}"`}</pre>
+        <p className="text-sm">ChatGPT and the Grok API, with a personal token. Both call the URL from the internet, so it has to be a public address. The authorization value is sent as Authorization: Bearer.</p>
+        <pre className="overflow-auto rounded-md bg-slate-50 p-3 font-mono text-xs">{JSON.stringify(
+          { type: "mcp", server_label: "dimension-knowledge", server_url: endpoint, authorization: sample },
+          null,
+          2,
+        )}</pre>
         <p className="text-sm">Cursor and other clients that read an mcpServers file:</p>
         <pre className="overflow-auto rounded-md bg-slate-50 p-3 font-mono text-xs">{JSON.stringify(
           { mcpServers: { "dimension-knowledge": { url: endpoint, headers: { Authorization: `Bearer ${sample}` } } } },
           null,
           2,
         )}</pre>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold">OAuth connections</h2>
+        {connections.length === 0 ? <p className="text-sm text-muted">No assistants have signed in yet.</p> : (
+          <ul className="panel divide-y text-sm">
+            {connections.map((connection) => (
+              <li key={connection.id} className="px-4 py-2">
+                <form action={updateOauthConnection} className="flex flex-wrap items-center gap-4">
+                  <input type="hidden" name="id" value={connection.id} />
+                  <span>
+                    <span className="font-semibold">{connection.name}</span>
+                    <span className="text-muted"> · {AI_PRODUCTS[connection.product].label}</span>
+                  </span>
+                  <label className="inline-flex items-center gap-2">
+                    <input type="checkbox" name="read" defaultChecked={connection.allowRead} />
+                    View records
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input type="checkbox" name="propose" defaultChecked={connection.allowPropose} disabled={!canPropose} />
+                    Propose changes
+                  </label>
+                  <button className="btn" type="submit">Update</button>
+                  <button className="btn-quiet" type="submit" formAction={disconnectOauthConnection}>Disconnect</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="panel space-y-3 p-4">
@@ -131,6 +208,29 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
           </ul>
         )}
       </section>
+
+      {user.isAdmin && otherConnections.length ? (
+        <section className="space-y-2">
+          <h2 className="flex items-center text-lg font-semibold">
+            Everyone&apos;s OAuth connections
+            <HelpTip text="Administrators can disconnect anyone's assistant, for example when a session should stop immediately." />
+          </h2>
+          <ul className="panel divide-y text-sm">
+            {otherConnections.map((connection) => (
+              <li key={connection.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2">
+                <span>
+                  <span className="font-semibold">{connection.user.name}</span>
+                  <span className="text-muted"> · {connection.name} · {AI_PRODUCTS[connection.product].label} · {connection.allowRead ? "View" : "View off"}{connection.allowPropose ? " · Propose" : ""}</span>
+                </span>
+                <form action={disconnectOauthConnection}>
+                  <input type="hidden" name="id" value={connection.id} />
+                  <button className="btn-quiet" type="submit">Disconnect</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {user.isAdmin && everyone.length ? (
         <section className="space-y-2">

@@ -19,6 +19,13 @@ const nextConfig: NextConfig = {
     // CSV import uploads files of up to 5 MB through a server action. Other actions stay small.
     serverActions: { bodySizeLimit: "6mb" },
   },
+  async rewrites() {
+    return [
+      { source: "/.well-known/oauth-protected-resource", destination: "/oauth/metadata/protected-resource" },
+      { source: "/.well-known/oauth-protected-resource/api/mcp", destination: "/oauth/metadata/protected-resource" },
+      { source: "/.well-known/oauth-authorization-server", destination: "/oauth/metadata/authorization-server" },
+    ];
+  },
   async headers() {
     return [
       {
