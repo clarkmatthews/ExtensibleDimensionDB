@@ -154,11 +154,18 @@ The action report reviews actions and their history. Filter by department, group
 
 The database works as a knowledge source for AI assistants. The schema (record types, dimensions, attribute names, descriptions, and lists) tells a model what each fact means, and records are retrieved as short knowledge cards when a question needs them. The contract is an MCP server with a `schema` resource and `search_records`, `get_record`, and `recent_changes` tools, described in [docs/ai-knowledge.md](docs/ai-knowledge.md).
 
-**Per person.** On **AI access**, each person creates a token and copies the connection command for their assistant. The app serves MCP at `/api/mcp`, and the assistant answers only from what that person can view. Only a hash of each token is stored. Tokens can expire, their owner can revoke them, and administrators can revoke anyone's.
+**Per person.** The app serves MCP at `/api/mcp`, and an assistant answers only from what its person can view. **AI access** offers two ways to connect:
+
+- **Chat assistants.** ChatGPT, Claude, and Grok on the web sign in with OAuth: the person adds the connection URL as a custom connector, signs in, and chooses **View only** or **View and propose**. There is no key to copy. An administrator turns each assistant on, and connecting the same assistant again replaces the earlier connection.
+- **Developer tools.** Claude Code, Cursor, the Grok CLI, and API calls use a personal token, with setup for each one on the page. Only a hash of each token is stored. Tokens can expire, and their owner can revoke them.
+
+Each person can change an assistant's access or disconnect it at any time, and administrators see every connection and token in one table and can end any of them.
 
 ![AI access](docs/screenshots/ai-access.png)
 
-**Governed write-back.** A token created with **Allow proposing changes** adds a `propose_change` tool. The assistant's change is checked with the record form's rules, and errors go straight back to the model. A valid proposal waits on **AI proposals** with the assistant's reason, the current value, and the proposed value. Nothing is saved until someone approves it. Reviewers can only approve attributes they may update, and someone other than the token's owner must review a proposal unless the reviewer is an administrator. An approved change is validated again and saved like a form edit, with the changelog, workflows, and webhooks.
+<img src="docs/screenshots/ai-consent.png" alt="The sign-in screen an assistant opens, with View only and View and propose" width="420">
+
+**Governed write-back.** A connection or token with **View and propose** adds a `propose_change` tool. The assistant's change is checked with the record form's rules, and errors go straight back to the model. A valid proposal waits on **AI proposals** with the assistant's reason, the current value, and the proposed value. Nothing is saved until someone approves it. Reviewers can only approve attributes they may update, and someone other than the assistant's owner must review a proposal unless the reviewer is an administrator. An approved change is validated again and saved like a form edit, with the changelog, workflows, and webhooks.
 
 ![A proposal waiting for review](docs/screenshots/proposals.png)
 

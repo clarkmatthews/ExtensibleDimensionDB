@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { newToken } from "@/lib/access-tokens";
 import { NEW_TOKEN_COOKIE } from "@/lib/ai-access-cookie";
 import { audited } from "@/lib/audit";
+import { accessChoice } from "@/lib/mcp-oauth";
+import { revokeConnections } from "@/lib/mcp-oauth-flow";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -31,7 +33,7 @@ export async function createAccessToken(formData: FormData) {
     const { user, access } = await member();
     const name = String(formData.get("name") ?? "").trim().slice(0, 80);
     if (!name) back(`error=${encodeURIComponent("Name the token after the assistant or computer that will use it.")}`);
-    const wantsPropose = formData.get("propose") === "on";
+    const wantsPropose = accessChoice(formData.get("access")) === "propose";
     if (wantsPropose && !(canEditModule(access, "AI_ACCESS") && canEditModule(access, "STORES"))) {
       back(`error=${encodeURIComponent("Proposing changes needs edit access to AI access and to Dimension.")}`);
     }
@@ -89,7 +91,7 @@ export async function saveOauthProducts(formData: FormData) {
   });
 }
 
-/** Updates view and propose on the owner's connection. The next request uses the new switches. */
+/** Sets the owner's connection to view only, or view and propose. The next request uses the new choice. */
 export async function updateOauthConnection(formData: FormData) {
   return audited("ai.oauthConnection", [formData], async () => {
     const { user, access } = await member();
@@ -99,7 +101,7 @@ export async function updateOauthConnection(formData: FormData) {
     const canPropose = canEditModule(access, "AI_ACCESS") && canEditModule(access, "STORES");
     await prisma.oauthConnection.update({
       where: { id },
-      data: { allowRead: formData.get("read") === "on", allowPropose: canPropose && formData.get("propose") === "on" },
+      data: { allowRead: true, allowPropose: canPropose && accessChoice(formData.get("access")) === "propose" },
     });
     revalidatePath(PAGE);
     back("saved=connection");
@@ -113,10 +115,7 @@ export async function disconnectOauthConnection(formData: FormData) {
     const id = String(formData.get("id") ?? "");
     const connection = await prisma.oauthConnection.findUnique({ where: { id } });
     if (!connection || connection.revokedAt || (connection.userId !== user.id && !user.isAdmin)) back(`error=${encodeURIComponent("That connection was not found.")}`);
-    const now = new Date();
-    await prisma.oauthConnection.update({ where: { id }, data: { revokedAt: now } });
-    await prisma.accessToken.updateMany({ where: { connectionId: id, revokedAt: null }, data: { revokedAt: now } });
-    await prisma.oauthRefreshToken.updateMany({ where: { connectionId: id, revokedAt: null }, data: { revokedAt: now } });
+    await revokeConnections([id]);
     revalidatePath(PAGE);
     back("saved=disconnected");
   });

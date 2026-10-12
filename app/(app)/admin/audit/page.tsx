@@ -23,8 +23,23 @@ const AREAS: { prefix: string; label: string }[] = [
   { prefix: "session.", label: "Sign-in sessions" },
 ];
 
+/** Actions whose generated name would not read well. */
+const LABELS: Record<string, string> = {
+  "ai.createToken": "Token created",
+  "ai.revokeToken": "Token revoked",
+  "ai.oauthProducts": "Chat assistants allowed to sign in changed",
+  "ai.oauthRegister": "Chat assistant registered",
+  "ai.oauthApprove": "Chat assistant connected",
+  "ai.oauthDeny": "Chat assistant sign-in cancelled",
+  "ai.oauthReplace": "Chat assistant reconnected; earlier connection ended",
+  "ai.oauthConnection": "Chat assistant access changed",
+  "ai.oauthDisconnect": "Chat assistant disconnected",
+  "ai.oauthRefreshReuse": "Chat assistant disconnected: an old sign-in was reused",
+};
+
 /** Turns "access.saveUser" into "Save user". */
 function actionLabel(action: string) {
+  if (LABELS[action]) return LABELS[action];
   const name = action.split(".").slice(1).join(".") || action;
   const words = name
     .replace(/([a-z])([A-Z])/g, "$1 $2")

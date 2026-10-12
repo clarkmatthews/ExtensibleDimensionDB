@@ -37,7 +37,9 @@ scheduleJob({
       // Uploaded files are only needed between preview and confirmation.
       prisma.importJob.deleteMany({ where: { createdAt: { lt: dayAgo } } }),
     ]);
-    return `removed ${sessions.count} sessions, ${locks.count} sign-in counters, ${blocks.count} API counters, ${deliveries.count} webhook deliveries, ${imports.count} import files`;
+    const { cleanUpOauth } = await import("@/lib/mcp-oauth-flow");
+    const oauth = await cleanUpOauth(now);
+    return `removed ${sessions.count} sessions, ${locks.count} sign-in counters, ${blocks.count} API counters, ${deliveries.count} webhook deliveries, ${imports.count} import files, ${oauth.tokens} assistant tokens, ${oauth.codes} sign-in codes, ${oauth.refreshTokens} refresh tokens`;
   },
 });
 
