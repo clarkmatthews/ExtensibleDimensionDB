@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     const state = client.randomState();
     const nonce = client.randomNonce();
     const url = client.buildAuthorizationUrl(config, {
-      redirect_uri: redirectUri(request.url),
+      redirect_uri: redirectUri(request),
       scope: "openid email profile",
       code_challenge: await client.calculatePKCECodeChallenge(verifier),
       code_challenge_method: "S256",

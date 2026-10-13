@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // These modules import the Prisma client; the unit tests never touch the database.
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
@@ -112,5 +112,38 @@ describe("change notifications", () => {
   it("always shows values to administrators", () => {
     const ctx = { ...base, user: user(true), categoryPerms: [] } as unknown as AccessContext;
     expect(canSeeValue(ctx, field.fieldId, field.categoryId)).toBe(true);
+  });
+});
+
+describe("public origin behind a reverse proxy", () => {
+  const original = process.env.APP_URL;
+  afterEach(() => {
+    if (original === undefined) delete process.env.APP_URL;
+    else process.env.APP_URL = original;
+  });
+
+  it("uses the forwarded host and protocol, not Next.js's own listening address", async () => {
+    delete process.env.APP_URL;
+    const { requestOrigin } = await import("@/lib/public-origin");
+    const request = new Request("https://localhost:3000/.well-known/oauth-authorization-server", {
+      headers: { host: "localhost:3000", "x-forwarded-host": "54-193-218-105.sslip.io", "x-forwarded-proto": "https" },
+    });
+    expect(requestOrigin(request)).toBe("https://54-193-218-105.sslip.io");
+  });
+
+  it("falls back to the Host header, and APP_URL wins over both", async () => {
+    delete process.env.APP_URL;
+    const { requestOrigin } = await import("@/lib/public-origin");
+    const plain = new Request("http://localhost:3000/x", { headers: { host: "db.example.com" } });
+    expect(requestOrigin(plain)).toBe("http://db.example.com");
+    process.env.APP_URL = "https://dimensions.example.com/";
+    expect(requestOrigin(plain)).toBe("https://dimensions.example.com");
+  });
+
+  it("ignores a malformed forwarded host", async () => {
+    delete process.env.APP_URL;
+    const { requestOrigin } = await import("@/lib/public-origin");
+    const request = new Request("http://localhost:3000/x", { headers: { "x-forwarded-host": "evil.com/path?x" } });
+    expect(requestOrigin(request)).toBe("http://localhost:3000");
   });
 });

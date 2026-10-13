@@ -10,7 +10,7 @@ function html(message: string) {
 
 /** Starts assistant sign-in. The query is sealed so a later login returns here and nowhere else. */
 export async function GET(request: NextRequest) {
-  const origin = publicOrigin(request.url);
+  const origin = publicOrigin(request);
   const parsed = parseAuthorizeQuery(request.nextUrl.searchParams, origin);
   if (!parsed.ok) return html(oauthMessage("invalid"));
   const client = await resolveOauthClient(parsed);

@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { originFromHeaders } from "@/lib/public-origin";
 import { redirect } from "next/navigation";
 import { CopyButton } from "@/components/copy-button";
 import { HelpTip } from "@/components/help-tip";
@@ -7,7 +8,7 @@ import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { saveSsoSettings, testSsoSettings } from "@/lib/sso-actions";
-import { loadSsoSettings, redirectUri } from "@/lib/sso";
+import { loadSsoSettings } from "@/lib/sso";
 
 export const metadata = { title: "Single sign-on" };
 
@@ -22,10 +23,7 @@ export default async function SsoPage({ searchParams }: { searchParams: Promise<
     loadSsoSettings(),
     prisma.group.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
-  const headerList = await headers();
-  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
-  const proto = headerList.get("x-forwarded-proto") ?? "http";
-  const callback = redirectUri(`${proto}://${host}/`);
+  const callback = new URL("/api/auth/oidc/callback", originFromHeaders(await headers())).toString();
 
   return (
     <div className="space-y-6">

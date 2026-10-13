@@ -6,5 +6,5 @@ export function OPTIONS() {
 }
 
 export function GET(request: Request) {
-  return NextResponse.json(protectedResourceMetadata(publicOrigin(request.url)), { headers: OAUTH_CORS });
+  return NextResponse.json(protectedResourceMetadata(publicOrigin(request)), { headers: OAUTH_CORS });
 }

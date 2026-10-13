@@ -9,6 +9,12 @@ export async function register() {
         "Set TRUST_PROXY=true when a reverse proxy sets X-Forwarded-For to the real client address.",
     );
   }
+  if (process.env.NODE_ENV === "production" && !process.env.APP_URL?.trim()) {
+    console.warn(
+      "APP_URL is not set. The public address for AI assistant sign-in and single sign-on is taken from each request's " +
+        "X-Forwarded-Host or Host header. Set APP_URL to the address people use, such as https://dimensions.example.com.",
+    );
+  }
   // Overdue alerts and housekeeping run inside the app. Set SCHEDULER=off to rely on an outside scheduler.
   await import("@/lib/jobs");
 }

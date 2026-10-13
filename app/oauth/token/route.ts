@@ -27,7 +27,7 @@ function failed(error: string, status = 400) {
 /** Authorization-code and refresh-token grants. Public clients send the client id in the body. */
 export async function POST(request: NextRequest) {
   const params = await form(request);
-  const origin = publicOrigin(request.url);
+  const origin = publicOrigin(request);
   const clientId = params.get("client_id")?.trim() ?? "";
   const resource = params.get("resource");
   if (!clientId) return failed("invalid_client");
