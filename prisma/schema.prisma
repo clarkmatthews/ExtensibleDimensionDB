@@ -118,6 +118,12 @@ enum WorkflowKind {
   TASK
 }
 
+/// A step in an action sequence either assigns work (ACTION) or sends a notice and moves on (NOTIFY).
+enum StepKind {
+  ACTION
+  NOTIFY
+}
+
 enum StepFieldRule {
   MUST_HAVE_VALUE
   MUST_CHANGE
@@ -471,6 +477,7 @@ model Location {
   values    FieldValue[]
   processes StoreProcess[]
   changes   FieldChange[]
+  notifications Notification[]
 }
 
 model FieldValue {
@@ -555,10 +562,14 @@ model WorkflowStep {
   process      WorkflowProcess   @relation(fields: [processId], references: [id], onDelete: Cascade)
   name         String
   sortOrder    Int
-  groupId        String
-  group          Group             @relation(fields: [groupId], references: [id])
+  kind         StepKind          @default(ACTION)
+  /// The group that receives an action, or that is notified. A notify step may name only a person.
+  groupId        String?
+  group          Group?            @relation(fields: [groupId], references: [id])
+  /// An action step's assignee (a member of the group), or the person a notify step notifies.
   assigneeUserId String?
   assigneeUser   User?             @relation("WorkflowAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  /// Used by action steps only.
   deadlineDays   Int               @default(1)
   fields       WorkflowStepField[]
   tasks        Task[]
@@ -872,7 +883,12 @@ model Notification {
   task          Task?        @relation(fields: [taskId], references: [id])
   fieldChangeId String?
   fieldChange   FieldChange? @relation(fields: [fieldChangeId], references: [id], onDelete: SetNull)
+  /// The record a notice is about, when it is not tied to an action or a change.
+  locationId    String?
+  location      Location?    @relation(fields: [locationId], references: [id], onDelete: Cascade)
   message       String
   createdAt     DateTime     @default(now())
   readAt        DateTime?
+
+  @@index([locationId])
 }

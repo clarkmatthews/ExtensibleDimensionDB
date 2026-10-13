@@ -10,6 +10,12 @@ import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, categoryAccess, loadAccess } from "@/lib/permissions";
 import { currentSessionId, getCurrentUser, revokeAllSessions } from "@/lib/session";
+import {
+  deleteWorkflowGraph,
+  deleteWorkflowStepGraph,
+  previewWorkflowDelete as previewWorkflowRemoval,
+  previewWorkflowStepDelete as previewWorkflowStepRemoval,
+} from "@/lib/workflow-delete";
 
 function text(formData: FormData, name: string) {
   return String(formData.get(name) ?? "").trim();
@@ -360,35 +366,47 @@ export async function saveWorkflowStep(formData: FormData) {
     const processId = text(formData, "processId");
     const id = text(formData, "id");
     const name = text(formData, "name");
-    const groupId = text(formData, "groupId");
+    const kind = text(formData, "kind") === "NOTIFY" ? "NOTIFY" : "ACTION";
+    const groupId = text(formData, "groupId") || null;
+    // An action step has an assignee within its group; a notify step names any person to notify.
+    const assigneeUserId = (kind === "NOTIFY" ? text(formData, "notifyUserId") : text(formData, "assigneeUserId")) || null;
     const deadlineDays = Number(text(formData, "deadlineDays") || "1");
-    const assigneeUserId = text(formData, "assigneeUserId") || null;
     const knownFields = await prisma.fieldDefinition.findMany({ select: { id: true } });
-    const rules = knownFields.flatMap((field) => {
+    const rules = kind === "NOTIFY" ? [] : knownFields.flatMap((field) => {
       const rule = text(formData, `rule:${field.id}`);
       if (rule !== "MUST_HAVE_VALUE" && rule !== "MUST_CHANGE") return [];
       return [{ fieldId: field.id, rule: rule as "MUST_HAVE_VALUE" | "MUST_CHANGE" }];
     });
-    if (!name || !groupId) redirect("/admin/workflows?error=Step%20name%20and%20group%20are%20required.");
-    if (assigneeUserId) {
+    if (!name) redirect("/admin/workflows?error=Step%20name%20is%20required.");
+    if (kind === "ACTION" && !groupId) redirect("/admin/workflows?error=An%20action%20step%20needs%20a%20group.");
+    if (kind === "NOTIFY" && !groupId && !assigneeUserId) {
+      redirect("/admin/workflows?error=A%20notify%20step%20needs%20a%20group%20or%20a%20person%20to%20notify.");
+    }
+    if (kind === "ACTION" && assigneeUserId && groupId) {
       const member = await prisma.userGroup.findFirst({
         where: { userId: assigneeUserId, groupId, user: { isActive: true } },
       });
       if (!member) redirect("/admin/workflows?error=The%20assigned%20user%20must%20be%20an%20active%20member%20of%20the%20step%20group.");
     }
+    if (kind === "NOTIFY" && assigneeUserId) {
+      const person = await prisma.user.findFirst({ where: { id: assigneeUserId, isActive: true }, select: { id: true } });
+      if (!person) redirect("/admin/workflows?error=Choose%20an%20active%20person%20to%20notify.");
+    }
+    const days = Number.isFinite(deadlineDays) && deadlineDays >= 1 ? Math.floor(deadlineDays) : 1;
     const last = await prisma.workflowStep.aggregate({ where: { processId }, _max: { sortOrder: true } });
     const step = id
       ? await prisma.workflowStep.update({
           where: { id },
-          data: { name, groupId, assigneeUserId, deadlineDays: Number.isFinite(deadlineDays) ? deadlineDays : 1 },
+          data: { name, kind, groupId, assigneeUserId, ...(kind === "ACTION" ? { deadlineDays: days } : {}) },
         })
       : await prisma.workflowStep.create({
           data: {
             processId,
             name,
+            kind,
             groupId,
             assigneeUserId,
-            deadlineDays: Number.isFinite(deadlineDays) ? deadlineDays : 1,
+            deadlineDays: days,
             sortOrder: (last._max.sortOrder ?? 0) + 1,
           },
         });
@@ -403,6 +421,50 @@ export async function saveWorkflowStep(formData: FormData) {
   });
 }
 
+/** For the delete dialogs, which call these directly: an error to show instead of a redirect. */
+async function workflowEditError() {
+  const user = await getCurrentUser();
+  if (!user) return "You are not signed in.";
+  return canEditModule(await loadAccess(user), "WORKFLOWS") ? "" : "Edit access to Workflows is required.";
+}
+
+export async function previewWorkflowDelete(id: string) {
+  const blocked = await workflowEditError();
+  if (blocked) return { error: blocked, title: "", message: "" };
+  return previewWorkflowRemoval(prisma, id);
+}
+
+export async function deleteWorkflow(id: string) {
+  return audited("access.deleteWorkflow", [id], async () => {
+    const blocked = await workflowEditError();
+    if (blocked) return { error: blocked };
+    const error = await prisma.$transaction((tx) => deleteWorkflowGraph(tx, id));
+    if (error) return { error };
+    revalidatePath("/admin/workflows");
+    revalidatePath("/admin/users");
+    revalidatePath("/dashboard");
+    return { error: "" };
+  });
+}
+
+export async function previewWorkflowStepDelete(id: string) {
+  const blocked = await workflowEditError();
+  if (blocked) return { error: blocked, title: "", message: "" };
+  return previewWorkflowStepRemoval(prisma, id);
+}
+
+export async function deleteWorkflowStep(id: string) {
+  return audited("access.deleteWorkflowStep", [id], async () => {
+    const blocked = await workflowEditError();
+    if (blocked) return { error: blocked };
+    const error = await prisma.$transaction((tx) => deleteWorkflowStepGraph(tx, id));
+    if (error) return { error };
+    revalidatePath("/admin/workflows");
+    revalidatePath("/admin/users");
+    return { error: "" };
+  });
+}
+
 export async function saveUserWorkflowSteps(formData: FormData) {
   return audited("access.saveUserWorkflowSteps", [formData], async () => {
     await requireEdit("USERS");
@@ -411,8 +473,9 @@ export async function saveUserWorkflowSteps(formData: FormData) {
     if (!account) redirect("/admin/users?error=That%20user%20was%20not%20found.");
     const groupIds = new Set(account.groups.map((membership) => membership.groupId));
     const selected = new Set(formData.getAll("stepId").map(String));
-    const steps = await prisma.workflowStep.findMany();
-    if (steps.some((step) => selected.has(step.id) && !groupIds.has(step.groupId))) {
+    // Only action steps are assigned to a person here; a notify step's person is set on the workflow.
+    const steps = await prisma.workflowStep.findMany({ where: { kind: "ACTION" } });
+    if (steps.some((step) => selected.has(step.id) && (!step.groupId || !groupIds.has(step.groupId)))) {
       redirect(`/admin/users/${userId}?error=${encodeURIComponent("Assign the user to the step's group before giving them that workflow step.")}`);
     }
     for (const step of steps) {

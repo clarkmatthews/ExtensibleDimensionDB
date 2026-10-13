@@ -1,4 +1,4 @@
-import type { TaskPriority } from "@prisma/client";
+import type { StepKind, TaskPriority } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { groupMemberIds, notifyUsers, watcherIds } from "@/lib/notify";
 import { canSeeValue, loadAccessForUsers } from "@/lib/permissions";
@@ -63,8 +63,69 @@ async function notifyChange(
   await notifyUsers(restricted, hiddenChangeText(userName), undefined, change.id);
 }
 
+type SequenceStep = {
+  id: string;
+  name: string;
+  kind: StepKind;
+  groupId: string | null;
+  assigneeUserId: string | null;
+  deadlineDays: number;
+  sortOrder: number;
+};
+
+/** A notify step's notice goes to the group's active members and the named person. */
+async function sendStepNotice(processName: string, step: SequenceStep, locationId: string) {
+  const ids = step.groupId ? await groupMemberIds(step.groupId) : [];
+  if (step.assigneeUserId) {
+    const person = await prisma.user.findFirst({ where: { id: step.assigneeUserId, isActive: true }, select: { id: true } });
+    if (person) ids.push(person.id);
+  }
+  await notifyUsers(ids, `${processName}: ${step.name}. A record reached this step.`, undefined, undefined, locationId);
+}
+
+/**
+ * Moves a run forward from steps[from]. Notify steps send their notice and pass straight on; the
+ * first action step opens an action. With no action step left, the run is complete.
+ */
+async function advance(input: {
+  runId: string;
+  processName: string;
+  steps: SequenceStep[];
+  from: number;
+  locationId: string;
+  senderUserId: string;
+  actorId: string;
+  comment: string;
+  deadlineDays?: number;
+  fieldChangeId?: string;
+}) {
+  for (let index = input.from; index < input.steps.length; index += 1) {
+    const step = input.steps[index];
+    if (step.kind === "NOTIFY") {
+      await sendStepNotice(input.processName, step, input.locationId);
+      continue;
+    }
+    // Saving a step requires a group on every action step; this guards older data.
+    if (!step.groupId) continue;
+    return openStep({
+      runId: input.runId,
+      processName: input.processName,
+      locationId: input.locationId,
+      stepId: step.id,
+      groupId: step.groupId,
+      senderUserId: input.senderUserId,
+      deadlineAt: addDays(new Date(), input.deadlineDays ?? step.deadlineDays),
+      actorId: input.actorId,
+      comment: input.comment,
+      fieldChangeId: input.fieldChangeId,
+    });
+  }
+  await prisma.storeProcess.update({ where: { id: input.runId }, data: { status: "COMPLETE" } });
+  return null;
+}
+
 async function startTaskProcess(
-  process: { id: string; name: string; steps: { id: string; groupId: string; deadlineDays: number; sortOrder: number }[] },
+  process: { id: string; name: string; steps: SequenceStep[] },
   locationId: string,
   userId: string,
   fieldChangeId?: string,
@@ -74,32 +135,20 @@ async function startTaskProcess(
     where: { locationId, processId: process.id, status: "ACTIVE", suspended: false },
   });
   if (active) return "That workflow is already open for this record.";
-  const step = [...process.steps].sort((left, right) => left.sortOrder - right.sortOrder)[0];
-  const assigneeUserId = await activeStepAssignee(step.id, step.groupId);
   const run = await prisma.storeProcess.create({
     data: { locationId, processId: process.id, originatorId: userId, status: "ACTIVE" },
   });
-  const task = await prisma.task.create({
-    data: {
-      storeProcessId: run.id,
-      stepId: step.id,
-      locationId,
-      assigneeGroupId: step.groupId,
-      assigneeUserId,
-      senderUserId: userId,
-      deadlineAt: addDays(new Date(), step.deadlineDays),
-      fieldChangeId,
-    },
-  });
-  await prisma.taskEvent.create({
-    data: { taskId: task.id, userId, action: "COMMENT", comment: "Process started." },
-  });
-  await notifyUsers(
-    assigneeUserId ? [assigneeUserId] : await groupMemberIds(step.groupId),
-    assigneeUserId ? `A new ${process.name} action was assigned to you.` : `A new ${process.name} action was assigned to your group.`,
-    task.id,
+  await advance({
+    runId: run.id,
+    processName: process.name,
+    steps: [...process.steps].sort((left, right) => left.sortOrder - right.sortOrder),
+    from: 0,
+    locationId,
+    senderUserId: userId,
+    actorId: userId,
+    comment: "Process started.",
     fieldChangeId,
-  );
+  });
   return null;
 }
 
@@ -142,7 +191,10 @@ export async function runWorkflows(input: {
         } else {
           await notifyUsers(
             await recipientIds(process.recipients),
-            `${input.userName} created a record.`,
+            `${process.name}: ${input.userName} created a record.`,
+            undefined,
+            undefined,
+            input.locationId,
           );
         }
       } else {
@@ -213,6 +265,7 @@ async function activeStepAssignee(stepId: string, groupId: string) {
 
 async function openStep(input: {
   runId: string;
+  processName: string;
   locationId: string;
   stepId: string;
   groupId: string;
@@ -220,6 +273,7 @@ async function openStep(input: {
   deadlineAt: Date;
   actorId: string;
   comment: string;
+  fieldChangeId?: string;
 }) {
   const assigneeUserId = await activeStepAssignee(input.stepId, input.groupId);
   const task = await prisma.task.create({
@@ -231,6 +285,7 @@ async function openStep(input: {
       assigneeUserId,
       senderUserId: input.senderUserId,
       deadlineAt: input.deadlineAt,
+      fieldChangeId: input.fieldChangeId,
     },
   });
   await prisma.taskEvent.create({
@@ -238,8 +293,9 @@ async function openStep(input: {
   });
   await notifyUsers(
     assigneeUserId ? [assigneeUserId] : await groupMemberIds(input.groupId),
-    assigneeUserId ? "A dimension action was assigned to you." : "A dimension action was assigned to your group.",
+    assigneeUserId ? `A new ${input.processName} action was assigned to you.` : `A new ${input.processName} action was assigned to your group.`,
     task.id,
+    input.fieldChangeId,
   );
   return task;
 }
@@ -329,14 +385,16 @@ export async function applyTaskAction(input: {
       data: { deadlineAt: addDays(task.deadlineAt, days) },
     });
   } else if (input.action === "REJECT") {
-    const previous = index > 0 ? steps[index - 1] : null;
-    if (!previous) return "Cannot reject the action: there is no previous action for this process.";
+    // Back to the previous action step; notify steps in between are not sent again.
+    const previous = steps.slice(0, Math.max(index, 0)).reverse().find((step) => step.kind === "ACTION" && step.groupId);
+    if (!previous?.groupId) return "Cannot reject the action: there is no previous action for this process.";
     await prisma.task.update({
       where: { id: task.id },
       data: { state: "COMPLETE", completedAt: new Date() },
     });
     await openStep({
       runId: task.storeProcessId,
+      processName: task.storeProcess.process.name,
       locationId: task.locationId,
       stepId: previous.id,
       groupId: previous.groupId,
@@ -379,24 +437,17 @@ export async function applyTaskAction(input: {
       where: { id: task.id },
       data: { state: input.action === "SKIP" ? "SKIPPED" : "COMPLETE", completedAt: new Date() },
     });
-    if (!next) {
-      await prisma.storeProcess.update({
-        where: { id: task.storeProcessId },
-        data: { status: "COMPLETE" },
-      });
-    } else {
-      const days = input.nextDeadlineDays && input.nextDeadlineDays > 0 ? input.nextDeadlineDays : next.deadlineDays;
-      await openStep({
-        runId: task.storeProcessId,
-        locationId: task.locationId,
-        stepId: next.id,
-        groupId: next.groupId,
-        senderUserId: user.id,
-        deadlineAt: addDays(new Date(), days),
-        actorId: user.id,
-        comment: input.action === "SKIP" ? `Skipped: ${comment}` : "Step completed.",
-      });
-    }
+    await advance({
+      runId: task.storeProcessId,
+      processName: task.storeProcess.process.name,
+      steps,
+      from: index + 1,
+      locationId: task.locationId,
+      senderUserId: user.id,
+      actorId: user.id,
+      comment: input.action === "SKIP" ? `Skipped: ${comment}` : "Step completed.",
+      deadlineDays: input.nextDeadlineDays && input.nextDeadlineDays > 0 ? input.nextDeadlineDays : undefined,
+    });
   } else if (input.action === "SUSPEND") {
     if (task.storeProcess.originatorId !== user.id && !user.isAdmin) {
       return "Only the process originator may suspend this process.";

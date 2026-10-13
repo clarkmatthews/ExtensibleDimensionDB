@@ -33,7 +33,8 @@ export default async function DashboardPage({
   const canEdit = canEditModule(access, "INBOX");
   const params = await searchParams;
   const recent = await prisma.notification.findMany({
-    where: { userId: user.id, fieldChangeId: { not: null } },
+    // Change notices, and notices about a record (a notify step, a record created).
+    where: { userId: user.id, OR: [{ fieldChangeId: { not: null } }, { locationId: { not: null } }] },
     include: { fieldChange: { include: { field: true, user: true } } },
     orderBy: { createdAt: "desc" },
     take: 12,
@@ -152,8 +153,8 @@ export default async function DashboardPage({
         );
       })}
       <section className="space-y-2">
-        <h2 className="text-lg font-semibold">Recent changes</h2>
-        {recent.length === 0 ? <p className="text-sm text-muted">No change notifications.</p> : null}
+        <h2 className="text-lg font-semibold">Recent changes and notices</h2>
+        {recent.length === 0 ? <p className="text-sm text-muted">No changes or notices.</p> : null}
         {recent.map((notice) => notice.fieldChange ? (
           <article key={notice.id} className="panel px-4 py-3 text-sm">
             {canSeeValue(access, notice.fieldChange.fieldId, notice.fieldChange.field.categoryId) ? (
@@ -168,6 +169,14 @@ export default async function DashboardPage({
               </p>
             )}
             <p className="text-xs text-muted">{notice.fieldChange.user.name} · {notice.fieldChange.createdAt.toLocaleString()}</p>
+          </article>
+        ) : notice.locationId ? (
+          <article key={notice.id} className="panel px-4 py-3 text-sm">
+            <p>
+              {notice.message}{" "}
+              <Link className="font-semibold text-pine" href={`/dimensions/${notice.locationId}`}>Open record</Link>
+            </p>
+            <p className="text-xs text-muted">{notice.createdAt.toLocaleString()}</p>
           </article>
         ) : null)}
       </section>

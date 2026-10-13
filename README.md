@@ -124,7 +124,9 @@ Nothing is saved when you upload. Every row is first checked with the same rules
 A workflow is a notification or an action sequence:
 
 - **Notify** sends the previous value, the new value, who saved it, and when. Recipients are groups and specific users. A recipient who is not allowed to view the changed attribute is told that a record changed, without the attribute or its values.
-- **Action sequence** assigns steps to a group, with an optional person and a deadline. A step can require an attribute to have a value, or to have been changed after the action opened.
+- **Action sequence** runs its steps in order. An **action** step assigns work to a group, with an optional person and a deadline, and can require an attribute to have a value or to have been changed after the action opened. A **notify** step sends a notice to a group, a person, or both, with a link to the record, and the sequence moves straight on to the next step.
+
+Workflows and steps can be deleted. A step is refused while a record is waiting on it; deleting a workflow removes its run history, so clear **Active** instead to keep it.
 
 Triggers are record created, attribute change (with an optional match value), and manual start. A workflow limited to dimensions, or triggered by attributes, applies only to records of those types; leave both empty to apply it to every record. Overdue actions are found every 15 minutes and their group is notified.
 
@@ -132,7 +134,7 @@ Triggers are record created, attribute change (with an optional match value), an
 
 ![An action sequence](docs/screenshots/workflow-open.png)
 
-The dashboard lists open actions assigned to you or to a group you belong to, then recent change notifications. Accept, complete, reject, comment, and reassign an action from its card. Opening an action goes to the record and highlights the attributes that step requires.
+The dashboard lists open actions assigned to you or to a group you belong to, then recent change notifications and notices from notify steps. Accept, complete, reject, comment, and reassign an action from its card. Opening an action goes to the record and highlights the attributes that step requires.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
