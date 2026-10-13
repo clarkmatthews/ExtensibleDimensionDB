@@ -175,7 +175,13 @@ export async function saveUser(formData: FormData) {
       email,
       isAdmin,
       canDefineWorkflows: actor.isAdmin ? formData.get("canDefineWorkflows") === "on" : (existing?.canDefineWorkflows ?? false),
-      ...(changingPassword ? { passwordHash: await hash(password, 10) } : {}),
+      ...(changingPassword
+        ? {
+            passwordHash: await hash(password, 10),
+            // A password someone else chose is temporary: a non-administrator picks their own at next sign-in.
+            mustChangePassword: id !== actor.id && !isAdmin,
+          }
+        : {}),
     };
     let user;
     try {

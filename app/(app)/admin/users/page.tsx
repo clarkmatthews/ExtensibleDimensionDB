@@ -32,7 +32,7 @@ export default async function UsersPage({
           <HelpTip text="Each person signs in with an email and a password. Groups give them shared access and workflow actions. Open a user to set dimension permissions and assign workflow steps." />
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-muted">
-          Each person signs in with an email address and a password. After an account is created, open it to grant dimension permissions and assign workflow steps.
+          Each person signs in with an email address and a password. People who are not administrators choose their own password the first time they sign in. After an account is created, open it to add exceptions to their groups and assign workflow steps.
         </p>
       </div>
       {params.error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{params.error}</p> : null}
@@ -49,7 +49,7 @@ export default async function UsersPage({
             <input className="field" name="email" type="email" autoComplete="off" required maxLength={254} />
           </label>
           <label>
-            <span className="label">Password <HelpTip text="12 to 128 characters, with an uppercase letter, a lowercase letter, a number, and a symbol. It must not include the person's name or email." /></span>
+            <span className="label">Password <HelpTip text="12 to 128 characters, with an uppercase letter, a lowercase letter, a number, and a symbol. It must not include the person's name or email. Someone who is not an administrator chooses their own password the first time they sign in." /></span>
             <input className="field" name="password" type="password" autoComplete="new-password" required />
           </label>
           <label>

@@ -160,6 +160,8 @@ model User {
   isActive           Boolean        @default(true)
   isAdmin            Boolean        @default(false)
   canDefineWorkflows Boolean        @default(false)
+  /// Set when someone else chose this person's password; they choose their own at next sign-in.
+  mustChangePassword Boolean        @default(false)
   createdAt          DateTime       @default(now())
   groups             UserGroup[]
   assignedTasks      Task[]         @relation("Assignee")

@@ -4,7 +4,9 @@ import { writeAudit } from "@/lib/audit";
 import { issueAuthorizationCode, resolveOauthClient } from "@/lib/mcp-oauth-flow";
 import { accessChoice, OAUTH_QUERY_COOKIE, openOauthQuery, parseAuthorizeQuery, publicOrigin } from "@/lib/mcp-oauth";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
+import { mustChooseOwnPassword } from "@/lib/password-policy";
 import { getCurrentUser } from "@/lib/session";
+import { loadSsoSettings } from "@/lib/sso";
 
 /**
  * 303 so the browser follows with a GET. A 307 would repeat this form POST at the assistant's
@@ -30,6 +32,7 @@ function clearCookie(response: NextResponse, request: NextRequest) {
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return seeOther(new URL("/login", requestOrigin(request)));
+  if (mustChooseOwnPassword(user, await loadSsoSettings().catch(() => null))) return seeOther(new URL("/account/password", requestOrigin(request)));
   const origin = publicOrigin(request);
   const query = openOauthQuery(request.cookies.get(OAUTH_QUERY_COOKIE)?.value);
   const parsed = query ? parseAuthorizeQuery(new URLSearchParams(query), origin) : null;

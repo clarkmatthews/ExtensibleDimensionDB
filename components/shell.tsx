@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { logout } from "@/app/login/actions";
 import { HelpTip } from "@/components/help-tip";
@@ -55,12 +55,16 @@ function CloseIcon() {
 
 export function Shell({
   name,
+  email,
+  canChangePassword,
   siteName,
   unread,
   allowedModules,
   children,
 }: {
   name: string;
+  email: string;
+  canChangePassword: boolean;
   siteName: string;
   unread: number;
   allowedModules: NavModuleId[];
@@ -112,13 +116,8 @@ export function Shell({
             {siteName}
             <HelpTip text="Dimension Config defines dimensions, their attributes, and lists. People Config defines who can open each page, who can see and change attributes, and the workflows those people follow. Settings defines the site name, API access, and email delivery." />
           </p>
-          <div className="ml-auto flex items-center gap-4">
-            <p className="truncate text-sm text-white">{name}</p>
-            <form action={logout}>
-              <button className="btn-quiet border-white/40 bg-transparent text-white" type="submit">
-                Sign out
-              </button>
-            </form>
+          <div className="ml-auto">
+            <AccountMenu name={name} email={email} canChangePassword={canChangePassword} />
           </div>
         </div>
         {open ? (
@@ -161,6 +160,68 @@ export function Shell({
         ) : null}
       </header>
       <main className="px-4 py-6 md:px-8">{children}</main>
+    </div>
+  );
+}
+
+/** The person's name in the header opens their account choices. */
+function AccountMenu({ name, email, canChangePassword }: { name: string; email: string; canChangePassword: boolean }) {
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const box = useRef<HTMLDivElement>(null);
+  // Navigating closes the menu.
+  const [openedOn, setOpenedOn] = useState(pathname);
+  if (openedOn !== pathname) {
+    setOpenedOn(pathname);
+    setOpen(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    function onClick(event: MouseEvent) {
+      if (box.current && !box.current.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClick);
+    };
+  }, [open]);
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        className="inline-flex max-w-[16rem] items-center gap-1 rounded-md px-2 py-1.5 text-sm text-white hover:bg-white/10"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls="account-menu"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="truncate">{name}</span>
+        <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 8l5 5 5-5" />
+        </svg>
+      </button>
+      {open ? (
+        <div id="account-menu" role="menu" className="absolute right-0 top-full z-50 mt-1 w-60 rounded-md border border-line bg-card py-1 text-sm text-ink shadow-lg">
+          <p className="truncate px-3 py-2 text-xs text-muted">{email}</p>
+          {canChangePassword ? (
+            <Link role="menuitem" className="block px-3 py-2 hover:bg-paper" href="/account/password">
+              Change password
+            </Link>
+          ) : null}
+          <form action={logout}>
+            <button role="menuitem" className="block w-full px-3 py-2 text-left hover:bg-paper" type="submit">
+              Sign out
+            </button>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
