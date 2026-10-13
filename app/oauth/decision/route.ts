@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { requestOrigin } from "@/lib/public-origin";
 import { writeAudit } from "@/lib/audit";
 import { issueAuthorizationCode, resolveOauthClient } from "@/lib/mcp-oauth-flow";
 import { accessChoice, OAUTH_QUERY_COOKIE, openOauthQuery, parseAuthorizeQuery, publicOrigin } from "@/lib/mcp-oauth";
@@ -28,13 +29,13 @@ function clearCookie(response: NextResponse, request: NextRequest) {
 /** Approves or cancels the assistant sign-in sealed in the cookie. The redirect comes from that request, not the form. */
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
-  if (!user) return seeOther(new URL("/login", request.url));
+  if (!user) return seeOther(new URL("/login", requestOrigin(request)));
   const origin = publicOrigin(request);
   const query = openOauthQuery(request.cookies.get(OAUTH_QUERY_COOKIE)?.value);
   const parsed = query ? parseAuthorizeQuery(new URLSearchParams(query), origin) : null;
-  if (!parsed?.ok) return seeOther(new URL("/oauth/consent", request.url));
+  if (!parsed?.ok) return seeOther(new URL("/oauth/consent", origin));
   const client = await resolveOauthClient(parsed);
-  if (!client.ok) return seeOther(new URL("/oauth/consent", request.url));
+  if (!client.ok) return seeOther(new URL("/oauth/consent", origin));
 
   const form = await request.formData();
   const access = await loadAccess(user);
