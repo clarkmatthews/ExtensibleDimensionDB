@@ -31,17 +31,6 @@ const ALL_CATEGORY: CategoryAccess = {
   canViewData: true,
 };
 
-function unionCategory(left: CategoryAccess, right: CategoryAccess): CategoryAccess {
-  return {
-    canAddFields: left.canAddFields || right.canAddFields,
-    canRemoveFields: left.canRemoveFields || right.canRemoveFields,
-    canEditFields: left.canEditFields || right.canEditFields,
-    canEditCategory: left.canEditCategory || right.canEditCategory,
-    canAssignPermissions: left.canAssignPermissions || right.canAssignPermissions,
-    canViewData: left.canViewData || right.canViewData,
-  };
-}
-
 function unionField(left: FieldAccess, right: FieldAccess): FieldAccess {
   return {
     canView: left.canView || right.canView,
@@ -62,8 +51,8 @@ export type AccessContext = {
 };
 
 /**
- * Who a grant can come from, strongest first. A person's own grant decides when they have one;
- * otherwise their groups' grants combine.
+ * Who a grant can come from, strongest first. A person's own settings override one item at a time;
+ * whatever they leave unset comes from their groups combined.
  */
 export type Tier = { subjectType: SubjectType; ids: string[] };
 
@@ -72,6 +61,11 @@ export function tiersFor(ctx: Pick<AccessContext, "user" | "groupIds">): Tier[] 
     { subjectType: "USER", ids: [ctx.user.id] },
     { subjectType: "GROUP", ids: ctx.groupIds },
   ];
+}
+
+/** Only the person's groups: what they would have without settings of their own. */
+export function groupTiersFor(ctx: Pick<AccessContext, "groupIds">): Tier[] {
+  return [{ subjectType: "GROUP", ids: ctx.groupIds }];
 }
 
 export async function loadAccess(user: AccessUser): Promise<AccessContext> {
@@ -121,22 +115,46 @@ export function firstModuleHref(ctx: AccessContext) {
   return NAV_MODULES.find((item) => canViewModule(ctx, item.id))?.href ?? null;
 }
 
+export const STRUCTURE_RIGHTS = ["canAddFields", "canRemoveFields", "canEditFields", "canEditCategory", "canAssignPermissions"] as const;
+export type StructureRight = (typeof STRUCTURE_RIGHTS)[number];
+
+const shows = (level: GrantLevel | null | undefined) => level === "VIEW" || level === "EDIT";
+
+/**
+ * A person's own tier overrides one item at a time: an empty right or level follows the tiers below.
+ * A group tier combines its groups, and decides once any of its groups has a grant for the dimension.
+ */
 export function categoryAccessIn(tiers: Tier[], categoryPerms: CategoryPermission[], categoryId: string): CategoryAccess {
   const rows = categoryPerms.filter((row) => row.categoryId === categoryId);
-  const tier = tiers.map((item) => inTier(rows, item)).find((decided) => decided.length);
-  if (!tier) return NO_CATEGORY;
-  return tier.reduce<CategoryAccess>(
-    (access, row) =>
-      unionCategory(access, {
-        canAddFields: row.canAddFields,
-        canRemoveFields: row.canRemoveFields,
-        canEditFields: row.canEditFields,
-        canEditCategory: row.canEditCategory,
-        canAssignPermissions: row.canAssignPermissions,
-        canViewData: row.canViewData || row.grantLevel === "VIEW" || row.grantLevel === "EDIT",
-      }),
-    NO_CATEGORY,
-  );
+  const result = { ...NO_CATEGORY };
+  for (const right of STRUCTURE_RIGHTS) {
+    for (const tier of tiers) {
+      const decided = inTier(rows, tier);
+      if (tier.subjectType === "USER") {
+        const values = decided.map((row) => row[right]).filter((value): value is boolean => value !== null);
+        if (!values.length) continue;
+        result[right] = values.some(Boolean);
+        break;
+      }
+      if (!decided.length) continue;
+      result[right] = decided.some((row) => row[right] === true);
+      break;
+    }
+  }
+  for (const tier of tiers) {
+    const decided = inTier(rows, tier);
+    if (tier.subjectType === "USER") {
+      const own = decided.filter((row) => row.applyToFields || row.grantLevel !== null);
+      if (!own.length) continue;
+      // Specific attributes: each attribute decides whether its value shows.
+      result.canViewData = own.some((row) => row.applyToFields || shows(row.grantLevel));
+      break;
+    }
+    if (!decided.length) continue;
+    result.canViewData = decided.some((row) => row.canViewData || shows(row.grantLevel));
+    break;
+  }
+  return result;
 }
 
 export function categoryAccess(ctx: AccessContext, categoryId: string): CategoryAccess {
@@ -146,6 +164,10 @@ export function categoryAccess(ctx: AccessContext, categoryId: string): Category
 
 function fromField(row: { canView: boolean; canUpdate: boolean }): FieldAccess {
   return { canView: row.canView || row.canUpdate, canUpdate: row.canUpdate };
+}
+
+function fromLevel(level: GrantLevel | null): FieldAccess {
+  return { canView: shows(level), canUpdate: level === "EDIT" };
 }
 
 export function fieldAccessIn(
@@ -159,16 +181,19 @@ export function fieldAccessIn(
     if (!tier.ids.length) continue;
     const categoryRows = inTier(categoryPerms.filter((row) => row.categoryId === categoryId), tier);
     const fieldRows = inTier(fieldPerms.filter((row) => row.fieldId === fieldId), tier);
-    const decides =
-      fieldRows.length > 0 ||
-      categoryRows.some((row) => row.applyToFields || row.grantLevel === "VIEW" || row.grantLevel === "EDIT");
+    if (tier.subjectType === "USER") {
+      // A person's own level for the entire dimension, then their own level for this attribute.
+      const whole = categoryRows.find((row) => !row.applyToFields && row.grantLevel !== null);
+      if (whole) return fromLevel(whole.grantLevel);
+      if (fieldRows.length) return fieldRows.map(fromField).reduce(unionField);
+      continue;
+    }
+    const decides = fieldRows.length > 0 || categoryRows.some((row) => row.applyToFields || shows(row.grantLevel));
     if (!decides) continue;
     const access = tier.ids.reduce<FieldAccess>((current, subjectId) => {
       const category = categoryRows.find((row) => row.subjectId === subjectId);
       const field = fieldRows.find((row) => row.subjectId === subjectId);
-      if (category && !category.applyToFields && (category.grantLevel === "VIEW" || category.grantLevel === "EDIT")) {
-        return unionField(current, category.grantLevel === "EDIT" ? { canView: true, canUpdate: true } : { canView: true, canUpdate: false });
-      }
+      if (category && !category.applyToFields && shows(category.grantLevel)) return unionField(current, fromLevel(category.grantLevel));
       return field ? unionField(current, fromField(field)) : current;
     }, { canView: false, canUpdate: false });
     if (access.canUpdate) access.canView = true;

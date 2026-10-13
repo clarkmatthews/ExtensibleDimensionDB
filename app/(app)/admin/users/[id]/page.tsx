@@ -2,9 +2,21 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
-import { savePermissions, saveUser, saveUserWorkflowSteps, setUserActive, signOutEverywhere } from "@/lib/access-actions";
+import { OwnSettings, type OwnDimension, type OwnScreen } from "@/components/own-settings";
+import { saveUser, saveUserWorkflowSteps, setUserActive, signOutEverywhere } from "@/lib/access-actions";
+import { NAV_MODULES } from "@/lib/nav-modules";
+import { RIGHTS, type Level } from "@/lib/permission-labels";
 import { PASSWORD_RULES } from "@/lib/passwords";
-import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
+import {
+  canEditModule,
+  canViewModule,
+  categoryAccess,
+  categoryAccessIn,
+  fieldAccessIn,
+  groupTiersFor,
+  loadAccess,
+  moduleAccessIn,
+} from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
@@ -20,7 +32,8 @@ export default async function UserPage({
   const access = await loadAccess(actor);
   if (!canViewModule(access, "USERS")) return <ModuleDenied />;
   const canEdit = canEditModule(access, "USERS");
-  const canEditPermissions = canEditModule(access, "PERMISSIONS");
+  const canSeeGroups = canViewModule(access, "ACCESS");
+  const canEditGroups = canEditModule(access, "ACCESS");
   const { id } = await params;
   const query = await searchParams;
   const [account, groups, categories, processes] = await Promise.all([
@@ -31,7 +44,6 @@ export default async function UserPage({
       orderBy: { sortOrder: "asc" },
       include: {
         fields: { where: { isActive: true }, orderBy: { sortOrder: "asc" } },
-        permissions: { where: { subjectType: "USER", subjectId: id } },
       },
     }),
     prisma.workflowProcess.findMany({
@@ -42,7 +54,38 @@ export default async function UserPage({
     }),
   ]);
   if (!account) notFound();
-  const fieldPerms = await prisma.fieldPermission.findMany({ where: { subjectType: "USER", subjectId: id } });
+  const subject = await loadAccess(account);
+  const groupTiers = groupTiersFor(subject);
+  const own = (row: { subjectType: string; subjectId: string }) => row.subjectType === "USER" && row.subjectId === account.id;
+  const ownScreens: OwnScreen[] = NAV_MODULES.map((item) => ({
+    id: item.id,
+    label: item.label,
+    section: item.group,
+    inherited: moduleAccessIn(groupTiers, subject.modulePerms, item.id),
+    own: subject.modulePerms.find((row) => own(row) && row.module === item.id)?.grantLevel ?? null,
+  }));
+  const ownDimensions: OwnDimension[] = categories.map((category) => {
+    const fromGroups = categoryAccessIn(groupTiers, subject.categoryPerms, category.id);
+    const fields = category.fields.map((field) => {
+      const rights = fieldAccessIn(groupTiers, subject.categoryPerms, subject.fieldPerms, field.id, category.id);
+      const inherited: Level = !fromGroups.canViewData || !rights.canView ? "NONE" : rights.canUpdate ? "EDIT" : "VIEW";
+      const row = subject.fieldPerms.find((item) => own(item) && item.fieldId === field.id);
+      const ownLevel: Level | null = row ? (row.canUpdate ? "EDIT" : row.canView ? "VIEW" : "NONE") : null;
+      return { id: field.id, friendlyName: field.friendlyName, inherited, own: ownLevel };
+    });
+    const levels = new Set(fields.map((field) => field.inherited));
+    const row = subject.categoryPerms.find((item) => own(item) && item.categoryId === category.id);
+    return {
+      id: category.id,
+      name: category.name,
+      editable: actor.isAdmin || categoryAccess(access, category.id).canAssignPermissions,
+      inheritedData: levels.size > 1 ? "MIXED" : (fields[0]?.inherited ?? (fromGroups.canViewData ? "VIEW" : "NONE")),
+      ownData: row?.applyToFields ? "FIELDS" : (row?.grantLevel ?? null),
+      inheritedRights: Object.fromEntries(RIGHTS.map((item) => [item.key, fromGroups[item.right]])) as OwnDimension["inheritedRights"],
+      ownRights: Object.fromEntries(RIGHTS.map((item) => [item.key, row?.[item.right] ?? null])) as OwnDimension["ownRights"],
+      fields,
+    };
+  });
   const memberGroups = new Set(account.groups.map((membership) => membership.groupId));
   const activeSessions = await prisma.session.findMany({
     where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
@@ -59,7 +102,7 @@ export default async function UserPage({
         <Link className="text-sm font-semibold text-pine" href="/admin/users">Users</Link>
         <h1 className="mt-1 flex items-center text-2xl font-semibold">
           {account.name}
-          <HelpTip text="Change this person's name, email, password, groups, dimension grants, and workflow assignments. An empty new password keeps the current one." />
+          <HelpTip text="Change this person's name, email, password, groups, own settings, and workflow assignments. An empty new password keeps the current one." />
         </h1>
         <p className="text-sm text-muted">{account.email}</p>
       </div>
@@ -96,13 +139,13 @@ export default async function UserPage({
         {actor.isAdmin ? (
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="flex items-center gap-2"><input name="isAdmin" type="checkbox" defaultChecked={account.isAdmin} /> Administrator <HelpTip text="An administrator can open and change every part of the product. Navigation and dimension grants do not limit them." /></label>
-          <label className="flex items-center gap-2"><input name="canDefineWorkflows" type="checkbox" defaultChecked={account.canDefineWorkflows} /> Can define structure and workflows <HelpTip text="Kept for earlier accounts. Page access is now set on Permissions." /></label>
+          <label className="flex items-center gap-2"><input name="canDefineWorkflows" type="checkbox" defaultChecked={account.canDefineWorkflows} /> Can define structure and workflows <HelpTip text="Kept for earlier accounts. Page access now comes from groups." /></label>
         </div>
         ) : (
-          <p className="text-sm text-muted">{account.isAdmin ? "Administrator." : "Not an administrator."} Navigation access is set on Permissions.</p>
+          <p className="text-sm text-muted">{account.isAdmin ? "Administrator." : "Not an administrator."} Screens and dimension access come from their groups, with any exceptions under Own settings.</p>
         )}
         <div>
-          <p className="label">Groups <HelpTip text="Group membership supplies that group's dimension access and lets this person receive the group's workflow actions." /></p>
+          <p className="label">Groups <HelpTip text="This person gets the permissions of every group they belong to, and can receive those groups' workflow actions." /></p>
           {groups.length ? (
             <div className="flex flex-wrap gap-3 text-sm">
               {groups.map((group) => (
@@ -113,7 +156,7 @@ export default async function UserPage({
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted">No active groups yet. Create one on Access.</p>
+            <p className="text-sm text-muted">No active groups yet. Create one on Groups.</p>
           )}
         </div>
         <div className="flex gap-2">
@@ -157,54 +200,11 @@ export default async function UserPage({
         ) : null}
       </section>
 
-      {canEditPermissions ? (
-      <form action={savePermissions} className="space-y-4">
-        <div>
-          <h2 className="flex items-center text-lg font-semibold">
-            Permissions
-            <HelpTip text="These grants apply only to this user and override their groups. Leave a box unchecked when this user should inherit access. Update on an attribute also allows viewing it. Add attributes creates attributes. Hide attributes deactivates them. View data is required before an attribute can be seen." />
-          </h2>
-          <p className="mt-1 max-w-3xl text-sm text-muted">
-            These grants apply only to this user and override their groups. Leave a box unchecked when this user should inherit access from a group. Update on an attribute also allows viewing it.
-          </p>
-        </div>
-        <input type="hidden" name="subjectType" value="USER" />
-        <input type="hidden" name="subjectId" value={account.id} />
-        <input type="hidden" name="returnTo" value={`/admin/users/${account.id}`} />
-        {categories.map((category) => {
-          const grant = category.permissions[0];
-          return (
-            <section key={category.id} className="panel p-4">
-              <h3 className="font-semibold">{category.name}</h3>
-              <div className="mt-2 flex flex-wrap gap-3 text-sm">
-                <Check name={`cat:${category.id}:add`} label="Add attributes" checked={grant?.canAddFields} />
-                <Check name={`cat:${category.id}:remove`} label="Hide attributes" checked={grant?.canRemoveFields} />
-                <Check name={`cat:${category.id}:edit`} label="Edit attributes" checked={grant?.canEditFields} />
-                <Check name={`cat:${category.id}:category`} label="Edit dimension" checked={grant?.canEditCategory} />
-                <Check name={`cat:${category.id}:assign`} label="Assign permissions" checked={grant?.canAssignPermissions} />
-                <Check name={`cat:${category.id}:view`} label="View data" checked={grant?.canViewData} />
-              </div>
-              <div className="mt-3 space-y-1 text-sm">
-                {category.fields.map((field) => {
-                  const fieldGrant = fieldPerms.find((row) => row.fieldId === field.id);
-                  return (
-                    <div key={field.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-line py-2">
-                      <span>{field.friendlyName}</span>
-                      <span className="flex gap-3">
-                        <Check name={`field:${field.id}:view`} label="View" checked={fieldGrant?.canView} />
-                        <Check name={`field:${field.id}:update`} label="Update" checked={fieldGrant?.canUpdate} />
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })}
-        <button className="btn" type="submit">Save permissions</button>
-      </form>
-      ) : null}
+      </fieldset>
 
+      {canSeeGroups ? <OwnSettings userId={account.id} isAdmin={account.isAdmin} canEdit={canEditGroups} screens={ownScreens} dimensions={ownDimensions} /> : null}
+
+      <fieldset disabled={!canEdit} className="min-w-0 space-y-6 border-0 p-0">
       <form action={saveUserWorkflowSteps} className="panel space-y-3 p-4">
         <h2 className="flex items-center font-semibold">
           Workflows
@@ -244,15 +244,6 @@ export default async function UserPage({
       </form>
       </fieldset>
     </div>
-  );
-}
-
-function Check({ name, label, checked }: { name: string; label: string; checked?: boolean }) {
-  return (
-    <label className="flex items-center gap-2">
-      <input name={name} type="checkbox" defaultChecked={Boolean(checked)} />
-      {label}
-    </label>
   );
 }
 

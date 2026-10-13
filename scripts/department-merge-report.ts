@@ -44,7 +44,7 @@ async function main() {
     }
     console.log(`    ${change.item}: ${change.before} → ${change.after}`);
   }
-  console.log("\nTo undo one, adjust the former department's group on Access or Permissions, or set the person's own grant on Permissions.");
+  console.log("\nTo undo one, adjust the former department's group on Groups, or make an exception under Own settings on the person's page.");
 }
 
 main()
