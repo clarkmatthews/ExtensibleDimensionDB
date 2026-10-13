@@ -160,6 +160,74 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
         <p className="text-xs text-muted">Both ways of connecting below use this address.</p>
       </section>
 
+      {user.isAdmin ? (
+        <details className="panel group" open={!anyEnabled}>
+          <summary className="section-toggle flex cursor-pointer items-center gap-2 p-4 text-lg font-semibold text-pine">
+            <span className="mark" aria-hidden="true" />
+            Administration
+            <span className="text-sm font-normal text-muted">· Which assistants can sign in, and everyone&apos;s connections</span>
+          </summary>
+          <div className="space-y-6 border-t border-line p-4">
+            <div className="space-y-2">
+              <h3 className="flex items-center text-sm font-semibold">
+                Chat assistants allowed to sign in
+                <HelpTip text="Each assistant is off until an administrator turns it on. Turning one off blocks new sign-ins and stops its existing connections at their next request. Tokens keep working." />
+              </h3>
+              <form action={saveOauthProducts} className="flex flex-wrap items-center gap-4 text-sm">
+                <label className="inline-flex items-center gap-2"><input type="checkbox" name="chatgpt" defaultChecked={oauth.allowChatGpt} /> ChatGPT</label>
+                <label className="inline-flex items-center gap-2"><input type="checkbox" name="claude" defaultChecked={oauth.allowClaude} /> Claude</label>
+                <label className="inline-flex items-center gap-2"><input type="checkbox" name="grok" defaultChecked={oauth.allowGrok} /> Grok</label>
+                <button className="btn" type="submit">Save</button>
+              </form>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="flex items-center text-sm font-semibold">
+                All connections and tokens
+                <HelpTip text="Disconnect or revoke anyone's access, for example when a laptop is lost or someone leaves." />
+              </h3>
+              {everyone.length === 0 ? (
+                <p className="text-sm text-muted">Nobody has connected an assistant yet.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-line">
+                  <table className="w-full text-left text-sm">
+                    <thead>
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">Person</th>
+                        <th className="px-3 py-2 font-semibold">Name</th>
+                        <th className="px-3 py-2 font-semibold">Type</th>
+                        <th className="px-3 py-2 font-semibold">Access</th>
+                        <th className="px-3 py-2 font-semibold">Status</th>
+                        <th className="px-3 py-2 font-semibold">Last used</th>
+                        <th className="px-3 py-2"><span className="sr-only">Action</span></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {everyone.map((row) => (
+                        <tr key={row.key}>
+                          <td className="px-3 py-2 font-semibold">{row.person}</td>
+                          <td className="px-3 py-2">{row.name}</td>
+                          <td className="px-3 py-2">{row.type}</td>
+                          <td className="px-3 py-2">{row.access}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{row.status}</td>
+                          <td className="px-3 py-2 whitespace-nowrap">{row.lastUsed}</td>
+                          <td className="px-3 py-2 text-right">
+                            <form action={row.action === "disconnect" ? disconnectOauthConnection : revokeAccessToken}>
+                              <input type="hidden" name="id" value={row.id} />
+                              <button className="btn-quiet" type="submit">{row.action === "disconnect" ? "Disconnect" : "Revoke"}</button>
+                            </form>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </details>
+      ) : null}
+
       <div className="grid items-start gap-6 lg:grid-cols-2">
         <section className="panel min-w-0 space-y-5 p-5" aria-labelledby="chat-heading">
           <div className="space-y-1">
@@ -176,7 +244,7 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
           </div>
           {anyEnabled ? null : (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-warn">
-              {user.isAdmin ? "Turn on at least one assistant under Administration below." : "An administrator needs to turn on an assistant before anyone can sign in."}
+              {user.isAdmin ? "Turn on at least one assistant under Administration above." : "An administrator needs to turn on an assistant before anyone can sign in."}
             </p>
           )}
           <ol className="space-y-3 text-sm">
@@ -297,74 +365,6 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
           </div>
         </section>
       </div>
-
-      {user.isAdmin ? (
-        <details className="panel group" open={!anyEnabled}>
-          <summary className="section-toggle flex cursor-pointer items-center gap-2 p-4 text-lg font-semibold text-pine">
-            <span className="mark" aria-hidden="true" />
-            Administration
-            <span className="text-sm font-normal text-muted">· Which assistants can sign in, and everyone&apos;s connections</span>
-          </summary>
-          <div className="space-y-6 border-t border-line p-4">
-            <div className="space-y-2">
-              <h3 className="flex items-center text-sm font-semibold">
-                Chat assistants allowed to sign in
-                <HelpTip text="Each assistant is off until an administrator turns it on. Turning one off blocks new sign-ins and stops its existing connections at their next request. Tokens keep working." />
-              </h3>
-              <form action={saveOauthProducts} className="flex flex-wrap items-center gap-4 text-sm">
-                <label className="inline-flex items-center gap-2"><input type="checkbox" name="chatgpt" defaultChecked={oauth.allowChatGpt} /> ChatGPT</label>
-                <label className="inline-flex items-center gap-2"><input type="checkbox" name="claude" defaultChecked={oauth.allowClaude} /> Claude</label>
-                <label className="inline-flex items-center gap-2"><input type="checkbox" name="grok" defaultChecked={oauth.allowGrok} /> Grok</label>
-                <button className="btn" type="submit">Save</button>
-              </form>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="flex items-center text-sm font-semibold">
-                All connections and tokens
-                <HelpTip text="Disconnect or revoke anyone's access, for example when a laptop is lost or someone leaves." />
-              </h3>
-              {everyone.length === 0 ? (
-                <p className="text-sm text-muted">Nobody has connected an assistant yet.</p>
-              ) : (
-                <div className="overflow-x-auto rounded-lg border border-line">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr>
-                        <th className="px-3 py-2 font-semibold">Person</th>
-                        <th className="px-3 py-2 font-semibold">Name</th>
-                        <th className="px-3 py-2 font-semibold">Type</th>
-                        <th className="px-3 py-2 font-semibold">Access</th>
-                        <th className="px-3 py-2 font-semibold">Status</th>
-                        <th className="px-3 py-2 font-semibold">Last used</th>
-                        <th className="px-3 py-2"><span className="sr-only">Action</span></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-line">
-                      {everyone.map((row) => (
-                        <tr key={row.key}>
-                          <td className="px-3 py-2 font-semibold">{row.person}</td>
-                          <td className="px-3 py-2">{row.name}</td>
-                          <td className="px-3 py-2">{row.type}</td>
-                          <td className="px-3 py-2">{row.access}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{row.status}</td>
-                          <td className="px-3 py-2 whitespace-nowrap">{row.lastUsed}</td>
-                          <td className="px-3 py-2 text-right">
-                            <form action={row.action === "disconnect" ? disconnectOauthConnection : revokeAccessToken}>
-                              <input type="hidden" name="id" value={row.id} />
-                              <button className="btn-quiet" type="submit">{row.action === "disconnect" ? "Disconnect" : "Revoke"}</button>
-                            </form>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        </details>
-      ) : null}
     </div>
   );
 }
