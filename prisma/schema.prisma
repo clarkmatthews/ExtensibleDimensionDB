@@ -594,9 +594,20 @@ model WorkflowProcessCategory {
   @@id([processId, categoryId])
 }
 
+/// How a trigger attribute's change is matched. Text comparisons ignore case and surrounding spaces.
+enum TriggerOperator {
+  ANY
+  BECOMES
+  CHANGES_FROM
+  CONTAINS
+  BECOMES_EMPTY
+  GETS_VALUE
+}
+
 model WorkflowTriggerField {
   processId  String
   fieldId    String
+  operator   TriggerOperator @default(ANY)
   matchValue String          @default("")
   process    WorkflowProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
   field      FieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)

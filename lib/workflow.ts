@@ -2,6 +2,7 @@ import type { StepKind, TaskPriority } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { groupMemberIds, notifyUsers, watcherIds } from "@/lib/notify";
 import { canSeeValue, loadAccessForUsers } from "@/lib/permissions";
+import { triggerMatches } from "@/lib/workflow-rules";
 
 const PRIORITY_UP: Record<TaskPriority, TaskPriority> = {
   LOW: "NORMAL",
@@ -178,7 +179,7 @@ export async function runWorkflows(input: {
       if (!inScope(change.categoryId)) return false;
       const trigger = process.triggers.find((item) => item.fieldId === change.fieldId);
       if (process.triggers.length > 0 && !trigger) return false;
-      if (trigger?.matchValue.trim() && trigger.matchValue.trim() !== change.newValue) return false;
+      if (trigger && !triggerMatches(trigger, change)) return false;
       return true;
     });
     if (input.created && process.onCreate) {
@@ -490,10 +491,14 @@ export async function raiseOverdueAlerts() {
       storeProcess: { suspended: false, status: "ACTIVE" },
       OR: [{ overdueNotifiedAt: null }, { overdueNotifiedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } }],
     },
+    include: { storeProcess: { select: { originatorId: true, process: { select: { name: true } } } }, step: { select: { name: true } } },
   });
   for (const task of overdue) {
-    const recipients = [...(await watcherIds(task.id)), ...(await groupMemberIds(task.assigneeGroupId))];
-    await notifyUsers(recipients, "A dimension action is overdue.", task.id);
+    // An assigned action alerts its person; an unassigned one, its group. The person who started
+    // the run and anyone watching are told too.
+    const owners = task.assigneeUserId ? [task.assigneeUserId] : await groupMemberIds(task.assigneeGroupId);
+    const recipients = [...owners, task.storeProcess.originatorId, ...(await watcherIds(task.id))];
+    await notifyUsers(recipients, `${task.storeProcess.process.name}: ${task.step.name} is overdue.`, task.id);
     await prisma.task.update({ where: { id: task.id }, data: { overdueNotifiedAt: new Date() } });
   }
   return overdue.length;
