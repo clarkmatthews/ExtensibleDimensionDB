@@ -7,6 +7,7 @@ import { clientAddress } from "@/lib/client-address";
 import { clearLoginFailures, loginBlockedUntil, noteLoginFailure } from "@/lib/login-throttle";
 import { oauthResumePath, OAUTH_QUERY_COOKIE } from "@/lib/mcp-oauth";
 import { writeAudit } from "@/lib/audit";
+import { mustChooseOwnPassword } from "@/lib/password-policy";
 import { loadSsoSettings } from "@/lib/sso";
 import { prisma } from "@/lib/prisma";
 import { clearSession, setSession } from "@/lib/session";
@@ -39,6 +40,8 @@ export async function login(formData: FormData) {
   if (sso?.enabled && sso.passwordAdminOnly && !user.isAdmin) redirect("/login?error=sso-only");
   await setSession(user.id);
   await writeAudit("session.signIn", { address }, user.id);
+  // An assistant sign-in in progress resumes after the new password is saved.
+  if (mustChooseOwnPassword(user, sso)) redirect("/account/password");
   redirect(oauthResumePath((await cookies()).get(OAUTH_QUERY_COOKIE)?.value) ?? "/dashboard");
 }
 

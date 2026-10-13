@@ -226,6 +226,10 @@ A person in several groups gets the higher level and every right any of their gr
 
 ![Groups](docs/screenshots/access.png)
 
+**Passwords.** Anyone who signs in with a password can change it from the menu under their name at the top right (**Change password**). It asks for the current password, signs out their other browsers, and is rate-limited like sign-in. When single sign-on applies to someone (they have signed in through the provider, or password sign-in is limited to administrators and they are not one), the option is hidden and the provider manages their credentials.
+
+A password an administrator sets for someone who is not an administrator, whether on a new account or as a reset, is temporary: that person must choose their own the next time they sign in before they can do anything else. On upgrade, existing non-administrator accounts that have never signed in are treated the same way.
+
 **Users** creates accounts, marks administrators, and adds people to groups. A user's page changes their password, assigns workflow steps, lists the browsers they are signed in on with **Sign out everywhere**, and has **Own settings**: every screen, dimension, admin right, and attribute starts at **From groups**, which shows what their groups give now. Choosing None, View, Edit, Yes, or No makes an exception that overrides their groups for that one item, so you can also take a single attribute away from one person. Changing Own settings needs Edit on Groups.
 
 ![Users](docs/screenshots/users.png)

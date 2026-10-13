@@ -105,6 +105,9 @@ export default async function UserPage({
           <HelpTip text="Change this person's name, email, password, groups, own settings, and workflow assignments. An empty new password keeps the current one." />
         </h1>
         <p className="text-sm text-muted">{account.email}</p>
+        {account.mustChangePassword && !account.isAdmin ? (
+          <p className="mt-1 text-sm text-muted">Will choose their own password at their next sign-in.</p>
+        ) : null}
       </div>
       {query.error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{query.error}</p> : null}
       {saved ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-pine">{saved}</p> : null}
@@ -123,7 +126,7 @@ export default async function UserPage({
             <input className="field" name="email" type="email" defaultValue={account.email} required maxLength={254} />
           </label>
           <label>
-            <span className="label">New password <HelpTip text="Leave this blank to keep the current password. A new password must be 12 to 128 characters and include upper and lower case, a number, and a symbol, and it must not include the person's name or email." /></span>
+            <span className="label">New password <HelpTip text="Leave this blank to keep the current password. If you set a new password for someone who is not an administrator, they choose their own at their next sign-in. A new password must be 12 to 128 characters and include upper and lower case, a number, and a symbol, and it must not include the person's name or email." /></span>
             <input className="field" name="password" type="password" autoComplete="new-password" placeholder="Leave blank to keep the current password" />
           </label>
           <label>

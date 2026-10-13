@@ -4,13 +4,16 @@ import { ACCESS_LABELS, AI_PRODUCTS, oauthMessage, OAUTH_QUERY_COOKIE, openOauth
 import { resolveOauthClient } from "@/lib/mcp-oauth-flow";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
+import { mustChooseOwnPassword } from "@/lib/password-policy";
 import { siteName } from "@/lib/site";
+import { loadSsoSettings } from "@/lib/sso";
 
 export const metadata = { title: "Connect an assistant" };
 
 export default async function ConsentPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (mustChooseOwnPassword(user, await loadSsoSettings().catch(() => null))) redirect("/account/password");
   const name = await siteName();
   const query = openOauthQuery((await cookies()).get(OAUTH_QUERY_COOKIE)?.value);
   const origin = originFromHeaders(await headers());
