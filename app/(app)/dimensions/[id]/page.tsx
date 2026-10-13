@@ -128,10 +128,19 @@ export default async function StorePage({
   const visibleInbound = inbound.filter((link) => canSeeValue(access, link.fieldId, link.categoryId));
   const visibleChanges = changes.filter((row) => canSeeValue(access, row.fieldId, row.field.categoryId));
 
+  // Back to the list this record belongs in: its record type's tab, or the archive.
+  const listName = types.length > 1 && recordType ? recordType.name : "Dimension";
+  const back = archived
+    ? { href: "/dimensions/archived", label: "Archived records" }
+    : { href: types.length > 1 ? `/dimensions?type=${encodeURIComponent(location.recordTypeId)}` : "/dimensions", label: listName };
+
   return (
     <div className="space-y-4">
+      <Link className="inline-flex items-center gap-1 text-sm font-medium text-pine hover:underline" href={back.href}>
+        <span aria-hidden="true">←</span> {back.label}
+      </Link>
       <h1 className="flex items-center text-2xl font-semibold">
-        {types.length > 1 && recordType ? recordType.name : "Dimension"}
+        {listName}
         <HelpTip text="Edit the values for this record. An attribute's description appears beside it. Attributes you cannot update are read only. When you open this page from an action, the attributes that step requires are highlighted. Changelog lists saved edits for this record." />
       </h1>
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}

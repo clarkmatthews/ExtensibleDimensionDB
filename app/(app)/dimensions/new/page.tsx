@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
@@ -72,6 +73,12 @@ export default async function NewStorePage({ searchParams }: { searchParams: Pro
   }
   return (
     <div className="space-y-4">
+      <Link
+        className="inline-flex items-center gap-1 text-sm font-medium text-pine hover:underline"
+        href={types.length > 1 ? `/dimensions?type=${encodeURIComponent(current.id)}` : "/dimensions"}
+      >
+        <span aria-hidden="true">←</span> {types.length > 1 ? current.name : "Dimension"}
+      </Link>
       <h1 className="flex items-center text-2xl font-semibold">
         {types.length > 1 ? `New ${current.name}` : "New dimension"}
         <HelpTip text="Create a record from the attributes you can update. A date attribute set to fill from the record date shows today's date and stays read only. Saving starts workflows that run when a record is created." />
