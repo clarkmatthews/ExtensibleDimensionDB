@@ -790,10 +790,14 @@ model ImportJob {
 }
 
 /// Background jobs that must run on one server only, and when they last ran.
+/// One row per background job. lockedUntil is a lease: a server claims the job by setting it,
+/// so no database connection is held while the job runs.
 model JobRun {
-  name       String   @id
-  lastRunAt  DateTime
-  lastResult String   @default("")
+  name        String    @id
+  lastRunAt   DateTime?
+  lastResult  String    @default("")
+  lockedUntil DateTime?
+  lockedBy    String?
 }
 
 /// Single sign-on with an OpenID Connect provider (Microsoft Entra ID, Google, Okta, Auth0, and others).

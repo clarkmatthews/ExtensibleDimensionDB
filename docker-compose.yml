@@ -26,7 +26,8 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://dimensionUser:${POSTGRES_PASSWORD_URLENCODED:-dimensionUser123%21}@db:5432/dimensionInfo
+      # Prisma sizes its pool from the CPU count, which is only 3 connections on a one-CPU server.
+      DATABASE_URL: postgresql://dimensionUser:${POSTGRES_PASSWORD_URLENCODED:-dimensionUser123%21}@db:5432/dimensionInfo?connection_limit=10
     ports:
       - "3000:3000"
 

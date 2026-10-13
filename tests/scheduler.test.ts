@@ -1,37 +1,57 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ locked: true, upserts: [] as unknown[] }));
+const state = vi.hoisted(() => ({ free: true, updates: [] as { where: Record<string, unknown>; data: Record<string, unknown> }[] }));
 
-vi.mock("@/lib/prisma", () => {
-  const tx = {
-    $queryRaw: async () => [{ locked: state.locked }],
-    jobRun: { upsert: async (args: unknown) => state.upserts.push(args) },
-  };
-  return { prisma: { $transaction: async (run: (client: typeof tx) => unknown) => run(tx) } };
-});
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    jobRun: {
+      createMany: async () => ({ count: 1 }),
+      updateMany: async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        state.updates.push(args);
+        // The claim is the update that sets a lease; it succeeds only when the lease is free.
+        if (args.data.lockedUntil) return { count: state.free ? 1 : 0 };
+        return { count: 1 };
+      },
+    },
+    $transaction: async () => {
+      throw new Error("jobs must not hold a transaction open");
+    },
+  },
+}));
 
 import { runJobOnce, schedulerEnabled } from "@/lib/scheduler";
 
 afterEach(() => {
-  state.locked = true;
-  state.upserts = [];
+  state.free = true;
+  state.updates = [];
   delete process.env.SCHEDULER;
 });
 
 describe("scheduler", () => {
-  it("runs a job and records the result when it gets the lock", async () => {
+  it("claims a lease, runs the job, and releases the lease with the result", async () => {
     const run = vi.fn(async () => "3 overdue");
     expect(await runJobOnce({ name: "overdue-alerts", everyMs: 1000, run })).toBe("3 overdue");
     expect(run).toHaveBeenCalledOnce();
-    expect(state.upserts).toHaveLength(1);
+    const [claim, done] = state.updates;
+    expect(claim.data.lockedUntil).toBeInstanceOf(Date);
+    expect(done.where.lockedBy).toBe(claim.data.lockedBy);
+    expect(done.data).toMatchObject({ lastResult: "3 overdue", lockedUntil: null, lockedBy: null });
   });
 
-  it("skips the job when another server holds the lock", async () => {
-    state.locked = false;
+  it("skips the job when another run holds the lease", async () => {
+    state.free = false;
     const run = vi.fn(async () => "ran");
     expect(await runJobOnce({ name: "overdue-alerts", everyMs: 1000, run })).toBeNull();
     expect(run).not.toHaveBeenCalled();
-    expect(state.upserts).toHaveLength(0);
+    expect(state.updates).toHaveLength(1);
+  });
+
+  it("releases the lease when the job fails, so the next run is not blocked", async () => {
+    const run = vi.fn(async () => {
+      throw new Error("mail server down");
+    });
+    await expect(runJobOnce({ name: "webhooks", everyMs: 1000, run })).rejects.toThrow("mail server down");
+    expect(state.updates.at(-1)?.data).toMatchObject({ lastResult: "failed: mail server down", lockedUntil: null });
   });
 
   it("is on unless SCHEDULER turns it off", () => {
