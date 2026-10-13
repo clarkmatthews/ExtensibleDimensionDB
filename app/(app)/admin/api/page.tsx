@@ -6,6 +6,7 @@ import { ModuleDenied } from "@/components/module-denied";
 import { regenerateApiSecret, saveApiEndpoint, setApiEndpointActive } from "@/lib/api-actions";
 import { dateKey, NEW_SECRET_COOKIE } from "@/lib/api-share";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
+import { originFromHeaders } from "@/lib/public-origin";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
@@ -20,10 +21,8 @@ export default async function ApiConfigPage({
   if (!canViewModule(access, "API_CONFIG")) return <ModuleDenied />;
   const canEdit = canEditModule(access, "API_CONFIG");
   const params = await searchParams;
-  const headerList = await headers();
-  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
-  const proto = headerList.get("x-forwarded-proto") ?? "http";
-  const origin = `${proto}://${host}`;
+  // APP_URL when set, so share links match the address partners are given.
+  const origin = originFromHeaders(await headers());
   const [categories, endpoints] = await Promise.all([
     prisma.category.findMany({
       orderBy: { sortOrder: "asc" },

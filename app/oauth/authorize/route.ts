@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const client = await resolveOauthClient(parsed);
   if (!client.ok) return html(oauthMessage(client.reason));
   const user = await getCurrentUser();
-  const response = NextResponse.redirect(new URL(user ? "/oauth/consent" : "/login", request.url));
+  const response = NextResponse.redirect(new URL(user ? "/oauth/consent" : "/login", origin));
   const https = request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
   response.cookies.set(OAUTH_QUERY_COOKIE, sealOauthQuery(request.nextUrl.searchParams.toString()), {
     httpOnly: true,

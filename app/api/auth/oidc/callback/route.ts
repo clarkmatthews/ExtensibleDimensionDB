@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { requestOrigin } from "@/lib/public-origin";
 import { hash } from "bcryptjs";
 import { NextResponse, type NextRequest } from "next/server";
 import { writeAudit } from "@/lib/audit";
@@ -9,7 +10,7 @@ import { setSession } from "@/lib/session";
 import { decideSso, FLOW_COOKIE, loadSsoSettings, openFlow, providerConfig, redirectUri, type SsoClaims, type SsoReason } from "@/lib/sso";
 
 function fail(request: NextRequest, reason: SsoReason) {
-  const response = NextResponse.redirect(new URL(`/login?error=sso&reason=${encodeURIComponent(reason)}`, request.url));
+  const response = NextResponse.redirect(new URL(`/login?error=sso&reason=${encodeURIComponent(reason)}`, requestOrigin(request)));
   response.cookies.delete({ name: FLOW_COOKIE, path: "/api/auth/oidc" });
   return response;
 }
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
   await setSession(userId);
   await writeAudit("session.ssoSignIn", { provider: settings.issuer }, userId);
   const resume = oauthResumePath(request.cookies.get(OAUTH_QUERY_COOKIE)?.value);
-  const response = NextResponse.redirect(new URL(resume ?? "/dashboard", request.url));
+  const response = NextResponse.redirect(new URL(resume ?? "/dashboard", requestOrigin(request)));
   response.cookies.delete({ name: FLOW_COOKIE, path: "/api/auth/oidc" });
   return response;
 }

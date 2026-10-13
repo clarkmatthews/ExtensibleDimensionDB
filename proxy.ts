@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { requestOrigin } from "@/lib/public-origin";
 import { readSessionToken, SESSION_COOKIE } from "@/lib/session-token";
 
 export function proxy(request: NextRequest) {
@@ -17,10 +18,10 @@ export function proxy(request: NextRequest) {
     path === "/oauth/authorize" ||
     path === "/api/mcp";
   if (!userId && !isPublic) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/login", requestOrigin(request)));
   }
   if (userId && path === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL("/dashboard", requestOrigin(request)));
   }
   return NextResponse.next();
 }

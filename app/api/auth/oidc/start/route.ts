@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { requestOrigin } from "@/lib/public-origin";
 import { decryptSecret } from "@/lib/mail";
 import { FLOW_COOKIE, loadSsoSettings, providerConfig, redirectUri, sealFlow, type SsoReason } from "@/lib/sso";
 
 function fail(request: NextRequest, reason: SsoReason) {
-  return NextResponse.redirect(new URL(`/login?error=sso&reason=${encodeURIComponent(reason)}`, request.url));
+  return NextResponse.redirect(new URL(`/login?error=sso&reason=${encodeURIComponent(reason)}`, requestOrigin(request)));
 }
 
 /** Starts single sign-on: remembers state, nonce, and the PKCE verifier, then sends the person to the provider. */
