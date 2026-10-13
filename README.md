@@ -128,7 +128,11 @@ A workflow is a notification or an action sequence:
 
 Workflows and steps can be deleted. A step is refused while a record is waiting on it; deleting a workflow removes its run history, so clear **Active** instead to keep it.
 
-Triggers are record created, attribute change (with an optional match value), and manual start. A workflow limited to dimensions, or triggered by attributes, applies only to records of those types; leave both empty to apply it to every record. Overdue actions are found every 15 minutes and their group is notified.
+Triggers are record created, attribute change, and manual start. Each trigger attribute has a condition: any change, becomes, changes from, new value contains, becomes empty, or gets a value; text comparisons ignore upper and lower case. A workflow limited to dimensions, or triggered by attributes, applies only to records of those types; leave both empty to apply it to every record. Dimensions and attributes are listed by record type.
+
+A workflow that cannot run as set up, such as one with Attribute change on but no attributes chosen, or a Notify workflow with no one to notify, is marked **Needs attention** with the reason. Changing a workflow between Notify and Action sequence asks first, and keeps the hidden steps or notify list in case it is changed back. A workflow that records are part-way through says so, and explains how step changes reach them.
+
+Overdue actions are found every 15 minutes. An action assigned to a person alerts that person; an unassigned one alerts its group. Whoever started the workflow and anyone watching the action are alerted too.
 
 ![Workflows](docs/screenshots/workflows.png)
 

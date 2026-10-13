@@ -200,3 +200,8 @@ details[open] > .section-toggle .mark::before {
 .step-editor:not(:has(select[name="kind"] option[value="NOTIFY"]:checked)) .notify-only {
   display: none;
 }
+
+/* Workflow trigger rows: the value box only shows for conditions that compare with a value. */
+.trigger-row:has(option[data-novalue]:checked) .trigger-value {
+  display: none;
+}

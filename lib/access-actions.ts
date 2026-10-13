@@ -10,6 +10,7 @@ import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, categoryAccess, loadAccess } from "@/lib/permissions";
 import { currentSessionId, getCurrentUser, revokeAllSessions } from "@/lib/session";
+import { parseOperator, TRIGGER_OPERATORS } from "@/lib/workflow-rules";
 import {
   deleteWorkflowGraph,
   deleteWorkflowStepGraph,
@@ -311,7 +312,10 @@ export async function saveWorkflow(formData: FormData) {
     const id = text(formData, "id");
     const name = text(formData, "name");
     if (!name) redirect("/admin/workflows?error=Process%20name%20is%20required.");
-    const kind = text(formData, "kind") === "NOTIFY" ? "NOTIFY" : "TASK";
+    // The kind is chosen when a workflow is created; changing it later goes through changeWorkflowKind.
+    const existing = id ? await prisma.workflowProcess.findUnique({ where: { id }, select: { kind: true } }) : null;
+    if (id && !existing) redirect("/admin/workflows?error=That%20workflow%20was%20not%20found.");
+    const kind = existing ? existing.kind : text(formData, "kind") === "NOTIFY" ? "NOTIFY" : "TASK";
     const onCreate = formData.get("onCreate") === "on";
     const onChange = formData.get("onChange") === "on";
     const manual = formData.get("manual") === "on";
@@ -340,15 +344,16 @@ export async function saveWorkflow(formData: FormData) {
       await prisma.workflowTriggerField.deleteMany({ where: { processId: process.id } });
       if (triggerIds.length) {
         await prisma.workflowTriggerField.createMany({
-          data: triggerIds.map((fieldId) => ({
-            processId: process.id,
-            fieldId,
-            matchValue: text(formData, `match:${fieldId}`),
-          })),
+          data: triggerIds.map((fieldId) => {
+            const operator = parseOperator(text(formData, `op:${fieldId}`));
+            const needsValue = TRIGGER_OPERATORS.find((item) => item.value === operator)?.needsValue;
+            return { processId: process.id, fieldId, operator, matchValue: needsValue ? text(formData, `match:${fieldId}`) : "" };
+          }),
         });
       }
-      await prisma.workflowRecipient.deleteMany({ where: { processId: process.id } });
-      if (kind === "NOTIFY") {
+      // Recipients are only on a Notify workflow's form; saving any other form leaves them as they are.
+      if (kind === "NOTIFY" && formData.has("recipientsShown")) {
+        await prisma.workflowRecipient.deleteMany({ where: { processId: process.id } });
         const recipients = [
           ...formData.getAll("recipientGroup").map(String).filter(Boolean).map((groupId) => ({ processId: process.id, groupId, userId: null })),
           ...formData.getAll("recipientUser").map(String).filter(Boolean).map((userId) => ({ processId: process.id, groupId: null, userId })),
@@ -357,6 +362,8 @@ export async function saveWorkflow(formData: FormData) {
       }
     }
     revalidatePath("/admin/workflows");
+    // A new workflow opens straight away, so its triggers, recipients or steps can be set.
+    if (!id) redirect(`/admin/workflows?open=${process.id}`);
   });
 }
 
@@ -461,6 +468,51 @@ export async function deleteWorkflowStep(id: string) {
     if (error) return { error };
     revalidatePath("/admin/workflows");
     revalidatePath("/admin/users");
+    return { error: "" };
+  });
+}
+
+async function kindChange(id: string) {
+  const process = await prisma.workflowProcess.findUnique({
+    where: { id },
+    include: { _count: { select: { steps: true, recipients: true } } },
+  });
+  if (!process) return null;
+  const open = await prisma.storeProcess.count({ where: { processId: id, status: { in: ["ACTIVE", "SUSPENDED"] } } });
+  return { process, open, to: process.kind === "NOTIFY" ? ("TASK" as const) : ("NOTIFY" as const) };
+}
+
+export async function previewWorkflowKindChange(id: string) {
+  const blocked = await workflowEditError();
+  if (blocked) return { error: blocked, title: "", message: "" };
+  const change = await kindChange(id);
+  if (!change) return { error: "This workflow was not found.", title: "", message: "" };
+  const { process, open, to } = change;
+  const sentences: string[] = [];
+  if (to === "NOTIFY") {
+    sentences.push(`${process.name} will send notices instead of assigning actions.`);
+    if (process._count.steps) sentences.push(`Its ${process._count.steps === 1 ? "step is" : `${process._count.steps} steps are`} hidden and kept, in case you change it back. Manual start is turned off.`);
+    if (open) sentences.push(`${open === 1 ? "1 record has" : `${open} records have`} it open; those actions continue until they are finished.`);
+    sentences.push("Choose who to notify after the change.");
+  } else {
+    sentences.push(`${process.name} will assign actions instead of sending notices.`);
+    if (process._count.recipients) sentences.push("Its notify list is hidden and kept, in case you change it back.");
+    sentences.push("Add steps after the change.");
+  }
+  return { error: "", title: `Change ${process.name} to ${to === "NOTIFY" ? "Notify" : "Action sequence"}?`, message: sentences.join(" ") };
+}
+
+export async function changeWorkflowKind(id: string) {
+  return audited("access.changeWorkflowKind", [id], async () => {
+    const blocked = await workflowEditError();
+    if (blocked) return { error: blocked };
+    const change = await kindChange(id);
+    if (!change) return { error: "This workflow was not found." };
+    await prisma.workflowProcess.update({
+      where: { id },
+      data: { kind: change.to, ...(change.to === "NOTIFY" ? { manual: false } : {}) },
+    });
+    revalidatePath("/admin/workflows");
     return { error: "" };
   });
 }

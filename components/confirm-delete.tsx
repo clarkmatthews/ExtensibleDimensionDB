@@ -7,12 +7,17 @@ type Preview = { error: string; title: string; message: string };
 export function ConfirmDelete({
   id,
   label = "Delete",
+  confirmLabel = "Yes, Delete",
+  busyLabel = "Deleting…",
   preview,
   commit,
   onDone,
 }: {
   id: string;
   label?: string;
+  /** For a confirmed change that is not a delete, such as changing a workflow's kind. */
+  confirmLabel?: string;
+  busyLabel?: string;
   preview: (id: string) => Promise<Preview>;
   commit: (id: string) => Promise<{ error: string }>;
   onDone?: () => void;
@@ -75,7 +80,7 @@ export function ConfirmDelete({
                 Cancel
               </button>
               <button className="btn" type="button" onClick={() => void confirm()} disabled={busy || !message}>
-                {busy ? "Deleting…" : "Yes, Delete"}
+                {busy ? busyLabel : confirmLabel}
               </button>
             </div>
           </div>
