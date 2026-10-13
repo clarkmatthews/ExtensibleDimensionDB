@@ -7,10 +7,12 @@ import { ModuleDenied } from "@/components/module-denied";
 import {
   deleteCategory,
   deleteField,
+  deleteRecordType,
   moveCategory,
   moveField,
   previewCategoryDelete,
   previewFieldDelete,
+  previewRecordTypeDelete,
   saveCategory,
   saveRecordType,
   setFieldActive,
@@ -99,7 +101,7 @@ export default async function DefinitionPage({
           <summary className="section-toggle flex cursor-pointer items-center gap-2 font-semibold">
             <span className="mark" aria-hidden="true" />
             Record types
-            <HelpTip text="A record type is a kind of record, such as Location, Vendor, or Product. Each type has its own dimensions, attributes, unique identifier, and records, and its own tab on the Dimension page. A Link to record attribute connects records of different types." />
+            <HelpTip text="A record type is a kind of record, such as Location, Vendor, or Product. Each type has its own dimensions, attributes, unique identifier, and records, and its own tab on the Dimension page. A Link to record attribute connects records of different types. Delete removes the type, its dimensions, its records, and its attribute definitions, including attributes that follow them." />
           </summary>
           <div className="mt-4 space-y-3">
             {recordTypes.map((type) => (
@@ -117,11 +119,14 @@ export default async function DefinitionPage({
                   {moduleEdit ? <button className="btn-quiet" type="submit">Save</button> : null}
                 </form>
                 {moduleEdit ? (
-                  <form action={setRecordTypeActive}>
-                    <input type="hidden" name="id" value={type.id} />
-                    <input type="hidden" name="active" value={type.isActive ? "0" : "1"} />
-                    <button className="btn-quiet" type="submit">{type.isActive ? "Hide" : "Show"}</button>
-                  </form>
+                  <span className="flex gap-2">
+                    <form action={setRecordTypeActive}>
+                      <input type="hidden" name="id" value={type.id} />
+                      <input type="hidden" name="active" value={type.isActive ? "0" : "1"} />
+                      <button className="btn-quiet" type="submit">{type.isActive ? "Hide" : "Show"}</button>
+                    </form>
+                    <ConfirmDelete id={type.id} preview={previewRecordTypeDelete} commit={deleteRecordType} />
+                  </span>
                 ) : null}
               </div>
             ))}

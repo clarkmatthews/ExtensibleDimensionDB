@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ChoiceSource, DataType, Prisma } from "@prisma/client";
-import { deleteCategoryGraph, deleteFieldGraph, previewCategory, previewField } from "@/lib/cascade-delete";
+import { deleteCategoryGraph, deleteFieldGraph, deleteRecordTypeGraph, previewCategory, previewField, previewRecordType } from "@/lib/cascade-delete";
 import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, canViewModule, categoryAccess, loadAccess } from "@/lib/permissions";
@@ -498,6 +498,30 @@ export async function saveRecordType(formData: FormData) {
     revalidatePath("/admin/definition");
     revalidatePath("/dimensions");
     redirect("/admin/definition?saved=type");
+  });
+}
+
+export async function previewRecordTypeDelete(id: string) {
+  const { access } = await editor();
+  const blocked = definitionError(access);
+  if (blocked) return { error: blocked, title: "", message: "" };
+  return previewRecordType(prisma, id);
+}
+
+/** Removes a record type and the attribute definitions that belong to it, including attributes that follow them. */
+export async function deleteRecordType(id: string) {
+  return audited("definition.deleteRecordType", [id], async () => {
+    const { access } = await editor();
+    const blocked = definitionError(access);
+    if (blocked) return { error: blocked };
+    const removed = await prisma.$transaction((tx) => deleteRecordTypeGraph(tx, id));
+    if (!removed) return { error: "This record type was not found." };
+    revalidatePath("/admin/definition");
+    revalidatePath("/dimensions");
+    revalidatePath("/changelog");
+    revalidatePath("/dashboard");
+    revalidatePath("/proposals");
+    return { error: "" };
   });
 }
 

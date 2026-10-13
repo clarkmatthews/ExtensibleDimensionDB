@@ -302,3 +302,83 @@ export async function deleteCategoryGraph(db: Db, id: string) {
   await db.category.delete({ where: { id } });
   return true;
 }
+
+/** Attributes of this record type, attributes that follow them, and attributes that link to it. */
+async function recordTypeFields(db: Db, id: string) {
+  const type = await db.recordType.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      categories: { select: { id: true, fields: { select: { id: true } } } },
+    },
+  });
+  if (!type) return null;
+  const owned = type.categories.flatMap((category) => category.fields.map((field) => field.id));
+  const links = await db.fieldDefinition.findMany({ where: { linkTypeId: id }, select: { id: true } });
+  const fields = await expandFields(db, [...owned, ...links.map((field) => field.id)]);
+  return { type, fields };
+}
+
+async function deleteTypeRecords(db: Db, recordTypeId: string) {
+  const locations = await db.location.findMany({ where: { recordTypeId }, select: { id: true } });
+  const locationIds = locations.map((location) => location.id);
+  if (!locationIds.length) return;
+  const processes = await db.storeProcess.findMany({ where: { locationId: { in: locationIds } }, select: { id: true } });
+  const processIds = processes.map((process) => process.id);
+  const tasks = await db.task.findMany({
+    where: {
+      OR: [
+        { locationId: { in: locationIds } },
+        ...(processIds.length ? [{ storeProcessId: { in: processIds } }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+  const taskIds = tasks.map((task) => task.id);
+  if (taskIds.length) {
+    await db.notification.updateMany({ where: { taskId: { in: taskIds } }, data: { taskId: null } });
+    await db.task.deleteMany({ where: { id: { in: taskIds } } });
+  }
+  if (processIds.length) await db.storeProcess.deleteMany({ where: { id: { in: processIds } } });
+  await db.location.deleteMany({ where: { id: { in: locationIds } } });
+}
+
+export async function previewRecordType(db: Db, id: string): Promise<DeletePreview> {
+  const loaded = await recordTypeFields(db, id);
+  if (!loaded) return emptyPreview("This record type was not found.");
+  const fieldIds = loaded.fields.map((field) => field.id);
+  const [records, steps] = await Promise.all([
+    db.location.count({ where: { recordTypeId: id } }),
+    stepCount(db, fieldIds),
+  ]);
+  const sentences: string[] = [];
+  if (loaded.fields.length) {
+    const names = nameList(loaded.fields.map((field) => field.name));
+    const listed = loaded.fields.length === 1 ? `The attribute ${names} will be removed` : `The attributes ${names} will be removed`;
+    sentences.push(`Deleting ${loaded.type.name} also removes its attribute definitions, including attributes that follow them. ${listed}.`);
+  } else {
+    sentences.push(`Deleting ${loaded.type.name} removes the record type. It has no attribute definitions.`);
+  }
+  const related = [
+    loaded.type.categories.length ? countPhrase(loaded.type.categories.length, "dimension") : "",
+    records ? countPhrase(records, "record") : "",
+  ].filter(Boolean);
+  if (related.length) sentences.push(`Its ${nameList(related)} will be removed.`);
+  if (steps) sentences.push(`Links on ${countPhrase(steps, "workflow step")} will be removed.`);
+  return { error: "", title: `Delete ${loaded.type.name}?`, message: sentences.join(" ") };
+}
+
+export async function deleteRecordTypeGraph(db: Db, id: string) {
+  const loaded = await recordTypeFields(db, id);
+  if (!loaded) return false;
+  await deleteFields(db, loaded.fields.map((field) => field.id));
+  await deleteTypeRecords(db, id);
+  const categoryIds = loaded.type.categories.map((category) => category.id);
+  if (categoryIds.length) await db.category.deleteMany({ where: { id: { in: categoryIds } } });
+  await db.fieldDefinition.updateMany({ where: { linkTypeId: id }, data: { linkTypeId: null } });
+  await db.changeProposal.deleteMany({ where: { recordTypeId: id } });
+  await db.importJob.deleteMany({ where: { recordTypeId: id } });
+  await db.recordType.delete({ where: { id } });
+  return true;
+}
