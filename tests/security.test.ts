@@ -89,7 +89,6 @@ describe("change notifications", () => {
   const field = { fieldId: "f-salary", categoryId: "c-hr" };
   const base = {
     groupIds: [],
-    departmentIds: [],
     fieldPerms: [],
     modulePerms: [],
   };

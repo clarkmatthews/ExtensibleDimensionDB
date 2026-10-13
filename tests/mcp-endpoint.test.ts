@@ -79,7 +79,6 @@ describe("proposal review rules", async () => {
     ({
       user: { id, isAdmin },
       groupIds: [],
-      departmentIds: [],
       categoryPerms: [],
       fieldPerms: [],
       modulePerms: edit ? [{ module: "PROPOSALS", subjectType: "USER", subjectId: id, grantLevel: "EDIT" }] : [],

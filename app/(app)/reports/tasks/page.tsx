@@ -12,7 +12,6 @@ export default async function TaskReportPage({
   searchParams,
 }: {
   searchParams: Promise<{
-    departmentId?: string;
     groupId?: string;
     userId?: string;
     from?: string;
@@ -26,8 +25,7 @@ export default async function TaskReportPage({
   const access = await loadAccess(user);
   if (!canViewModule(access, "TASK_REPORT")) return <ModuleDenied />;
   const params = await searchParams;
-  const [departments, groups, users] = await Promise.all([
-    prisma.department.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+  const [groups, users] = await Promise.all([
     prisma.group.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     prisma.user.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
@@ -62,9 +60,6 @@ export default async function TaskReportPage({
       if (includeAll ? !involved : !assignedToUser) continue;
     } else if (params.groupId) {
       if (task.assigneeGroupId !== params.groupId) continue;
-    } else if (params.departmentId) {
-      const group = groups.find((item) => item.id === task.assigneeGroupId);
-      if (group?.departmentId !== params.departmentId) continue;
     }
     if (storeTokens.length) {
       const code = await prisma.fieldValue.findFirst({
@@ -80,13 +75,9 @@ export default async function TaskReportPage({
     <div className="space-y-4">
       <h1 className="flex items-center text-2xl font-semibold">
         Action report
-        <HelpTip text="Review actions and what was done on them. Department, group, and user narrow the list. Dates limit actions that were open in that range. Dimension codes match the unique identifier attribute." />
+        <HelpTip text="Review actions and what was done on them. Group and user narrow the list. Dates limit actions that were open in that range. Dimension codes match the unique identifier attribute." />
       </h1>
       <form className="panel grid gap-3 p-4 md:grid-cols-3" action="/reports/tasks">
-        <select className="field" name="departmentId" defaultValue={params.departmentId ?? ""}>
-          <option value="">Any department</option>
-          {departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
-        </select>
         <select className="field" name="groupId" defaultValue={params.groupId ?? ""}>
           <option value="">Any group</option>
           {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}

@@ -32,40 +32,15 @@ async function requireEdit(moduleId: NavModuleId) {
   return user;
 }
 
-export async function saveDepartment(formData: FormData) {
-  return audited("access.saveDepartment", [formData], async () => {
-    await requireEdit("ACCESS");
-    const id = text(formData, "id");
-    const name = text(formData, "name");
-    const description = text(formData, "description");
-    if (!name) redirect("/admin/access?error=Department%20name%20is%20required.");
-    if (id) await prisma.department.update({ where: { id }, data: { name, description } });
-    else await prisma.department.create({ data: { name, description } });
-    revalidatePath("/admin/access");
-  });
-}
-
-export async function setDepartmentActive(formData: FormData) {
-  return audited("access.setDepartmentActive", [formData], async () => {
-    await requireEdit("ACCESS");
-    await prisma.department.update({
-      where: { id: text(formData, "id") },
-      data: { isActive: text(formData, "active") === "1" },
-    });
-    revalidatePath("/admin/access");
-  });
-}
-
 export async function saveGroup(formData: FormData) {
   return audited("access.saveGroup", [formData], async () => {
     await requireEdit("ACCESS");
     const id = text(formData, "id");
     const name = text(formData, "name");
     const description = text(formData, "description");
-    const departmentId = text(formData, "departmentId") || null;
     if (!name) redirect("/admin/access?error=Group%20name%20is%20required.");
-    if (id) await prisma.group.update({ where: { id }, data: { name, description, departmentId } });
-    else await prisma.group.create({ data: { name, description, departmentId } });
+    if (id) await prisma.group.update({ where: { id }, data: { name, description } });
+    else await prisma.group.create({ data: { name, description } });
     revalidatePath("/admin/access");
   });
 }
@@ -242,23 +217,39 @@ export async function savePermissions(formData: FormData) {
     if (!canEditModule(access, "PERMISSIONS")) {
       redirect("/admin/permissions?error=You%20cannot%20change%20permissions.");
     }
-    const subjectType = text(formData, "subjectType") as SubjectType;
+    const rawType = text(formData, "subjectType");
+    const subjectType: SubjectType = rawType === "GROUP" ? "GROUP" : "USER";
     const subjectId = text(formData, "subjectId");
-    if (!subjectType || !subjectId) redirect("/admin/permissions?error=Choose%20who%20receives%20these%20permissions.");
+    if (!rawType || !subjectId) redirect("/admin/permissions?error=Choose%20who%20receives%20these%20permissions.");
 
     const categories = await prisma.category.findMany({ include: { fields: true } });
     for (const category of categories) {
       const rights = categoryAccess(access, category.id);
       if (!user.isAdmin && !rights.canAssignPermissions) continue;
-      const categoryGrant = {
+      const structure = {
         canAddFields: formData.get(`cat:${category.id}:add`) === "on",
         canRemoveFields: formData.get(`cat:${category.id}:remove`) === "on",
         canEditFields: formData.get(`cat:${category.id}:edit`) === "on",
         canEditCategory: formData.get(`cat:${category.id}:category`) === "on",
         canAssignPermissions: formData.get(`cat:${category.id}:assign`) === "on",
-        canViewData: formData.get(`cat:${category.id}:view`) === "on",
       };
       const categoryKey = { categoryId: category.id, subjectType, subjectId };
+      if (subjectType === "GROUP") {
+        // A group's view and edit access is set on Access; here only its admin rights change.
+        const existing = await prisma.categoryPermission.findUnique({ where: { categoryId_subjectType_subjectId: categoryKey } });
+        const keepsData = Boolean(existing && (existing.canViewData || existing.applyToFields || existing.grantLevel !== "NONE"));
+        if (Object.values(structure).some(Boolean) || keepsData) {
+          await prisma.categoryPermission.upsert({
+            where: { categoryId_subjectType_subjectId: categoryKey },
+            update: structure,
+            create: { ...categoryKey, ...structure },
+          });
+        } else if (existing) {
+          await prisma.categoryPermission.delete({ where: { categoryId_subjectType_subjectId: categoryKey } });
+        }
+        continue;
+      }
+      const categoryGrant = { ...structure, canViewData: formData.get(`cat:${category.id}:view`) === "on" };
       if (Object.values(categoryGrant).some(Boolean)) {
         await prisma.categoryPermission.upsert({
           where: { categoryId_subjectType_subjectId: categoryKey },
@@ -285,11 +276,18 @@ export async function savePermissions(formData: FormData) {
         }
       }
     }
-    if (formData.get("saveNavigation") === "1" && (subjectType === "USER" || subjectType === "DEPARTMENT")) {
+    if (formData.get("saveNavigation") === "1") {
       for (const item of NAV_MODULES) {
         const chosen = text(formData, `nav:${item.id}`);
-        const grantLevel = chosen === "VIEW" || chosen === "EDIT" ? chosen : "NONE";
         const key = { module: item.id, subjectType, subjectId };
+        // A person's screen may follow their groups (no row of their own). A group grants View or
+        // Edit; None is simply no grant.
+        const inherit = chosen === "INHERIT" || (subjectType === "GROUP" && chosen !== "VIEW" && chosen !== "EDIT");
+        if (inherit) {
+          await prisma.modulePermission.deleteMany({ where: key });
+          continue;
+        }
+        const grantLevel = chosen === "VIEW" || chosen === "EDIT" ? chosen : "NONE";
         await prisma.modulePermission.upsert({
           where: { module_subjectType_subjectId: key },
           update: { grantLevel },

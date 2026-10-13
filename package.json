@@ -10,7 +10,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "mcp": "tsx --env-file=.env mcp/server.ts",
     "test": "vitest run",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "report:department-merge": "tsx scripts/department-merge-report.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

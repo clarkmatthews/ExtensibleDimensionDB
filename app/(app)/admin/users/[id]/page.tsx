@@ -162,10 +162,10 @@ export default async function UserPage({
         <div>
           <h2 className="flex items-center text-lg font-semibold">
             Permissions
-            <HelpTip text="These grants apply only to this user and override group and department grants. Leave a box unchecked when this user should inherit access. Update on an attribute also allows viewing it. Add attributes creates attributes. Hide attributes deactivates them. View data is required before an attribute can be seen." />
+            <HelpTip text="These grants apply only to this user and override their groups. Leave a box unchecked when this user should inherit access. Update on an attribute also allows viewing it. Add attributes creates attributes. Hide attributes deactivates them. View data is required before an attribute can be seen." />
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-muted">
-            These grants apply only to this user and override group and department grants. Leave a box unchecked when this user should inherit access from a group. Update on an attribute also allows viewing it.
+            These grants apply only to this user and override their groups. Leave a box unchecked when this user should inherit access from a group. Update on an attribute also allows viewing it.
           </p>
         </div>
         <input type="hidden" name="subjectType" value="USER" />

@@ -1,4 +1,4 @@
-import type { CategoryPermission, FieldPermission, GrantLevel, ModulePermission, User } from "@prisma/client";
+import type { CategoryPermission, FieldPermission, GrantLevel, ModulePermission, SubjectType, User } from "@prisma/client";
 import { NAV_MODULES, type NavModuleId } from "@/lib/nav-modules";
 import { prisma } from "@/lib/prisma";
 
@@ -50,33 +50,38 @@ function unionField(left: FieldAccess, right: FieldAccess): FieldAccess {
 }
 
 export type AccessUser = User & {
-  groups: { groupId: string; group: { departmentId: string | null } }[];
+  groups: { groupId: string }[];
 };
 
 export type AccessContext = {
   user: AccessUser;
   groupIds: string[];
-  departmentIds: string[];
   categoryPerms: CategoryPermission[];
   fieldPerms: FieldPermission[];
   modulePerms: ModulePermission[];
 };
 
+/**
+ * Who a grant can come from, strongest first. A person's own grant decides when they have one;
+ * otherwise their groups' grants combine.
+ */
+export type Tier = { subjectType: SubjectType; ids: string[] };
+
+export function tiersFor(ctx: Pick<AccessContext, "user" | "groupIds">): Tier[] {
+  return [
+    { subjectType: "USER", ids: [ctx.user.id] },
+    { subjectType: "GROUP", ids: ctx.groupIds },
+  ];
+}
+
 export async function loadAccess(user: AccessUser): Promise<AccessContext> {
   const groupIds = user.groups.map((membership) => membership.groupId);
-  const departmentIds = [
-    ...new Set(
-      user.groups
-        .map((membership) => membership.group.departmentId)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ];
   const [categoryPerms, fieldPerms, modulePerms] = await Promise.all([
     prisma.categoryPermission.findMany(),
     prisma.fieldPermission.findMany(),
     prisma.modulePermission.findMany(),
   ]);
-  return { user, groupIds, departmentIds, categoryPerms, fieldPerms, modulePerms };
+  return { user, groupIds, categoryPerms, fieldPerms, modulePerms };
 }
 
 function strongestLevel(rows: { grantLevel: GrantLevel }[]): GrantLevel {
@@ -85,17 +90,23 @@ function strongestLevel(rows: { grantLevel: GrantLevel }[]): GrantLevel {
   return "NONE";
 }
 
+function inTier<T extends { subjectType: string; subjectId: string }>(rows: T[], tier: Tier) {
+  return rows.filter((row) => row.subjectType === tier.subjectType && tier.ids.includes(row.subjectId));
+}
+
+/** Screen access from the first tier that has a setting for this screen. */
+export function moduleAccessIn(tiers: Tier[], modulePerms: ModulePermission[], moduleId: NavModuleId): GrantLevel {
+  const rows = modulePerms.filter((row) => row.module === moduleId);
+  for (const tier of tiers) {
+    const decided = inTier(rows, tier);
+    if (decided.length) return strongestLevel(decided);
+  }
+  return "NONE";
+}
+
 export function moduleAccess(ctx: AccessContext, moduleId: NavModuleId): GrantLevel {
   if (ctx.user.isAdmin) return "EDIT";
-  const userRows = ctx.modulePerms.filter(
-    (row) => row.module === moduleId && row.subjectType === "USER" && row.subjectId === ctx.user.id,
-  );
-  if (userRows.length) return strongestLevel(userRows);
-  const departmentRows = ctx.modulePerms.filter(
-    (row) => row.module === moduleId && row.subjectType === "DEPARTMENT" && ctx.departmentIds.includes(row.subjectId),
-  );
-  if (departmentRows.length) return strongestLevel(departmentRows);
-  return "NONE";
+  return moduleAccessIn(tiersFor(ctx), ctx.modulePerms, moduleId);
 }
 
 export function canViewModule(ctx: AccessContext, moduleId: NavModuleId) {
@@ -110,31 +121,9 @@ export function firstModuleHref(ctx: AccessContext) {
   return NAV_MODULES.find((item) => canViewModule(ctx, item.id))?.href ?? null;
 }
 
-function pickTier<T extends { subjectType: string; subjectId: string }>(
-  rows: T[],
-  userId: string,
-  groupIds: string[],
-  departmentIds: string[],
-): T[] | null {
-  const userRows = rows.filter((row) => row.subjectType === "USER" && row.subjectId === userId);
-  if (userRows.length) return userRows;
-  const groupRows = rows.filter((row) => row.subjectType === "GROUP" && groupIds.includes(row.subjectId));
-  if (groupRows.length) return groupRows;
-  const departmentRows = rows.filter(
-    (row) => row.subjectType === "DEPARTMENT" && departmentIds.includes(row.subjectId),
-  );
-  if (departmentRows.length) return departmentRows;
-  return null;
-}
-
-export function categoryAccess(ctx: AccessContext, categoryId: string): CategoryAccess {
-  if (ctx.user.isAdmin) return ALL_CATEGORY;
-  const tier = pickTier(
-    ctx.categoryPerms.filter((row) => row.categoryId === categoryId),
-    ctx.user.id,
-    ctx.groupIds,
-    ctx.departmentIds,
-  );
+export function categoryAccessIn(tiers: Tier[], categoryPerms: CategoryPermission[], categoryId: string): CategoryAccess {
+  const rows = categoryPerms.filter((row) => row.categoryId === categoryId);
+  const tier = tiers.map((item) => inTier(rows, item)).find((decided) => decided.length);
   if (!tier) return NO_CATEGORY;
   return tier.reduce<CategoryAccess>(
     (access, row) =>
@@ -150,45 +139,47 @@ export function categoryAccess(ctx: AccessContext, categoryId: string): Category
   );
 }
 
-const TIERS = ["USER", "GROUP", "DEPARTMENT"] as const;
+export function categoryAccess(ctx: AccessContext, categoryId: string): CategoryAccess {
+  if (ctx.user.isAdmin) return ALL_CATEGORY;
+  return categoryAccessIn(tiersFor(ctx), ctx.categoryPerms, categoryId);
+}
 
 function fromField(row: { canView: boolean; canUpdate: boolean }): FieldAccess {
   return { canView: row.canView || row.canUpdate, canUpdate: row.canUpdate };
 }
 
-export function fieldAccess(ctx: AccessContext, fieldId: string, categoryId: string): FieldAccess {
-  if (ctx.user.isAdmin) return { canView: true, canUpdate: true };
-  const members = {
-    USER: [ctx.user.id],
-    GROUP: ctx.groupIds,
-    DEPARTMENT: ctx.departmentIds,
-  };
-  for (const tier of TIERS) {
-    const ids = members[tier];
-    if (!ids.length) continue;
-    const categoryRows = ctx.categoryPerms.filter(
-      (row) => row.categoryId === categoryId && row.subjectType === tier && ids.includes(row.subjectId),
-    );
-    const fieldRows = ctx.fieldPerms.filter(
-      (row) => row.fieldId === fieldId && row.subjectType === tier && ids.includes(row.subjectId),
-    );
+export function fieldAccessIn(
+  tiers: Tier[],
+  categoryPerms: CategoryPermission[],
+  fieldPerms: FieldPermission[],
+  fieldId: string,
+  categoryId: string,
+): FieldAccess {
+  for (const tier of tiers) {
+    if (!tier.ids.length) continue;
+    const categoryRows = inTier(categoryPerms.filter((row) => row.categoryId === categoryId), tier);
+    const fieldRows = inTier(fieldPerms.filter((row) => row.fieldId === fieldId), tier);
     const decides =
       fieldRows.length > 0 ||
       categoryRows.some((row) => row.applyToFields || row.grantLevel === "VIEW" || row.grantLevel === "EDIT");
     if (!decides) continue;
-    const access = ids.reduce<FieldAccess>((current, subjectId) => {
+    const access = tier.ids.reduce<FieldAccess>((current, subjectId) => {
       const category = categoryRows.find((row) => row.subjectId === subjectId);
       const field = fieldRows.find((row) => row.subjectId === subjectId);
       if (category && !category.applyToFields && (category.grantLevel === "VIEW" || category.grantLevel === "EDIT")) {
         return unionField(current, category.grantLevel === "EDIT" ? { canView: true, canUpdate: true } : { canView: true, canUpdate: false });
       }
-      if (category?.applyToFields) return field ? unionField(current, fromField(field)) : current;
       return field ? unionField(current, fromField(field)) : current;
     }, { canView: false, canUpdate: false });
     if (access.canUpdate) access.canView = true;
     return access;
   }
   return { canView: false, canUpdate: false };
+}
+
+export function fieldAccess(ctx: AccessContext, fieldId: string, categoryId: string): FieldAccess {
+  if (ctx.user.isAdmin) return { canView: true, canUpdate: true };
+  return fieldAccessIn(tiersFor(ctx), ctx.categoryPerms, ctx.fieldPerms, fieldId, categoryId);
 }
 
 /** True when this person may read the value of an attribute: the same test the record form uses. */
@@ -205,7 +196,7 @@ export async function loadAccessForUsers(userIds: string[]): Promise<Map<string,
   const [users, categoryPerms, fieldPerms, modulePerms] = await Promise.all([
     prisma.user.findMany({
       where: { id: { in: unique }, isActive: true },
-      include: { groups: { include: { group: true } } },
+      include: { groups: true },
     }),
     prisma.categoryPermission.findMany(),
     prisma.fieldPermission.findMany(),
@@ -213,10 +204,7 @@ export async function loadAccessForUsers(userIds: string[]): Promise<Map<string,
   ]);
   for (const user of users) {
     const groupIds = user.groups.map((membership) => membership.groupId);
-    const departmentIds = [
-      ...new Set(user.groups.map((membership) => membership.group.departmentId).filter((id): id is string => Boolean(id))),
-    ];
-    result.set(user.id, { user, groupIds, departmentIds, categoryPerms, fieldPerms, modulePerms });
+    result.set(user.id, { user, groupIds, categoryPerms, fieldPerms, modulePerms });
   }
   return result;
 }
