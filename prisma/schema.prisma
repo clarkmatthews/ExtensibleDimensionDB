@@ -51,7 +51,6 @@ enum AppModule {
   API_CONFIG
   EMAIL_CONFIG
   SITE_CONFIG
-  PERMISSIONS
   USERS
   ACCESS
   WORKFLOWS
@@ -500,13 +499,16 @@ model CategoryPermission {
   category             Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   subjectType          SubjectType
   subjectId            String
-  canAddFields         Boolean     @default(false)
-  canRemoveFields      Boolean     @default(false)
-  canEditFields        Boolean     @default(false)
-  canEditCategory      Boolean     @default(false)
-  canAssignPermissions Boolean     @default(false)
+  /// A group's rights are always set. On a person's own row, an empty right follows their groups.
+  canAddFields         Boolean?
+  canRemoveFields      Boolean?
+  canEditFields        Boolean?
+  canEditCategory      Boolean?
+  canAssignPermissions Boolean?
   canViewData          Boolean     @default(false)
-  grantLevel           GrantLevel  @default(NONE)
+  /// The level for the entire dimension. Empty on a person's own row means their groups decide.
+  grantLevel           GrantLevel?
+  /// Specific attributes: each attribute has its own level (FieldPermission).
   applyToFields        Boolean     @default(false)
 
   @@unique([categoryId, subjectType, subjectId])

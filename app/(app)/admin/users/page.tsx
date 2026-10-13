@@ -65,7 +65,7 @@ export default async function UsersPage({
         {user.isAdmin ? (
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="flex items-center gap-2"><input name="isAdmin" type="checkbox" /> Administrator <HelpTip text="An administrator can open and change every part of the product. Navigation and dimension grants do not limit them." /></label>
-          <label className="flex items-center gap-2"><input name="canDefineWorkflows" type="checkbox" /> Can define structure and workflows <HelpTip text="Kept for earlier accounts. Page access is now set on Permissions. An administrator can still change this flag." /></label>
+          <label className="flex items-center gap-2"><input name="canDefineWorkflows" type="checkbox" /> Can define structure and workflows <HelpTip text="Kept for earlier accounts. Page access now comes from groups. An administrator can still change this flag." /></label>
         </div>
         ) : null}
         {groups.length ? (
@@ -78,7 +78,7 @@ export default async function UsersPage({
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted">Add a group on Access if this person should inherit group permissions or receive workflow actions.</p>
+          <p className="text-sm text-muted">Add a group on Groups first: people get their permissions from the groups they belong to.</p>
         )}
         <button className="btn" type="submit">Create user</button>
       </form>

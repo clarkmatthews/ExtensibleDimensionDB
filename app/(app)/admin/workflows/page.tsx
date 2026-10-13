@@ -249,7 +249,7 @@ export default async function WorkflowsPage({
                             ))}
                           </div>
                           <p className="mt-2 text-sm">
-                            <Link className="font-semibold text-pine" href="/admin/access">Manage groups on Access</Link>
+                            <Link className="font-semibold text-pine" href="/admin/access">Manage groups</Link>
                           </p>
                         </div>
                         <div>

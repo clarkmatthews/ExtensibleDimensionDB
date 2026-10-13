@@ -4,7 +4,7 @@
 
 Extensible Dimension Database is a metadata-driven data platform for the records that run your operation: locations, products, vendors, assets, or anything else you need to track. Administrators shape the data model right in the browser. They add record types, dimensions, and attributes, set validation, build cascading choice lists, link records to each other, and decide who can see or edit each field. There are no migrations, no deploys, and no developer in the loop. Everyone else gets a clean, searchable grid and record forms that change as the model changes.
 
-The structure is only the start. Built-in workflows turn data changes into work: a new record or a changed field can notify the right people, or start an action sequence with assignees, deadlines, required fields, and overdue alerts. Every edit is recorded with the before value, the after value, who made it, and when, and every administrative change lands in an audit log. Access is granted down to the single attribute, by user or group, and people can sign in with your identity provider.
+The structure is only the start. Built-in workflows turn data changes into work: a new record or a changed field can notify the right people, or start an action sequence with assignees, deadlines, required fields, and overdue alerts. Every edit is recorded with the before value, the after value, who made it, and when, and every administrative change lands in an audit log. Access is granted to groups down to the single attribute, with per-person exceptions, and people can sign in with your identity provider.
 
 The data is also built to be used outside the app:
 
@@ -215,21 +215,26 @@ Create a list, optionally set which list it follows, and manage its items. Child
 
 ### People and permissions
 
-**Permissions** sets screen access for a user or a group: None, View, or Edit, and for a user also **From groups**, which follows their groups. Dimension grants control who can add, hide, or edit attributes; for a user they also set who can see records and view or update each attribute.
+Permissions are assigned to **groups**. A person gets the combined permissions of every group they belong to, and their own page can make an exception for a single item.
 
-![Permissions](docs/screenshots/permissions.png)
+**Groups** creates groups and holds everything they grant. Open a group to see its members and set:
 
-**Users** creates accounts, marks administrators, and adds people to groups. A user's page changes their password, sets per-user attribute grants, assigns workflow steps, and lists the browsers they are signed in on, with **Sign out everywhere**.
+- **Screens**: None, View, or Edit for each screen.
+- **Dimensions**: data access for the entire dimension (None, View, or Edit, which also covers attributes added later) or for specific attributes, plus the admin rights to add, hide, or edit attributes, edit the dimension, and assign its permissions.
+
+A person in several groups gets the higher level and every right any of their groups gives. Someone who is not an administrator can change a dimension's permissions only if they have **Assign permissions** on it.
+
+![Groups](docs/screenshots/access.png)
+
+**Users** creates accounts, marks administrators, and adds people to groups. A user's page changes their password, assigns workflow steps, lists the browsers they are signed in on with **Sign out everywhere**, and has **Own settings**: every screen, dimension, admin right, and attribute starts at **From groups**, which shows what their groups give now. Choosing None, View, Edit, Yes, or No makes an exception that overrides their groups for that one item, so you can also take a single attribute away from one person. Changing Own settings needs Edit on Groups.
 
 ![Users](docs/screenshots/users.png)
 
 ![A user account](docs/screenshots/user.png)
 
-**Access** creates groups. A group can grant view or edit for a whole dimension or for specific attributes; its screens are set on Permissions.
+**Upgrading from a version with a Permissions page.** Groups' permissions and everyone's effective access stay the same. A person's old grants become exceptions only where they actually differ from their groups; everything else now follows their groups. The Permissions screen is merged into Groups, so anyone who could open or change Permissions now has the same level on Groups.
 
 **Upgrading from a version with departments.** Each department becomes a group with the same name, whose members are everyone in the groups that were linked to it, and its grants move across unchanged. Where one of a person's groups used to hold back something their department granted, that person now has the department's access. Run `docker compose exec app npm run report:department-merge` after upgrading to list exactly who gained what.
-
-![Access](docs/screenshots/access.png)
 
 ### Single sign-on
 

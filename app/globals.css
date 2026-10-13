@@ -205,3 +205,8 @@ details[open] > .section-toggle .mark::before {
 .trigger-row:has(option[data-novalue]:checked) .trigger-value {
   display: none;
 }
+
+/* A person's own settings: attribute choices show only under "Specific attributes". */
+.own-dimension:not(:has(option[value="FIELDS"]:checked)) .own-fields {
+  display: none;
+}

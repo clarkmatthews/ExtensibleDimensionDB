@@ -148,9 +148,9 @@ export default async function DefinitionPage({
       </section>
       {params.added ? (
         <div className="panel px-4 py-3 text-sm">
-          Attribute added. Set who can see and update it on{" "}
-          <Link className="font-semibold text-pine" href="/admin/permissions">
-            Permissions
+          Attribute added. Set which groups can see and update it on{" "}
+          <Link className="font-semibold text-pine" href="/admin/access">
+            Groups
           </Link>{" "}
           and attach it to a step on{" "}
           <Link className="font-semibold text-pine" href="/admin/workflows">
