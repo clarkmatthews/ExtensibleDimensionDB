@@ -1,4 +1,5 @@
 import { createHash, createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
+import { originFromHeaders, requestOrigin } from "@/lib/public-origin";
 import { assertAuthSecret } from "@/lib/session-token";
 
 /**
@@ -76,19 +77,12 @@ export function connectionScopes(connection: ConnectionFlags, settings: OauthSet
   return connection.allowPropose && personCanPropose ? ["read", "propose"] : ["read"];
 }
 
-export function publicOrigin(requestUrl: string) {
-  const configured = process.env.APP_URL?.trim();
-  if (configured) return new URL(configured).origin;
-  return new URL(requestUrl).origin;
+/** The public origin for an OAuth route: APP_URL, or the address the reverse proxy forwarded. */
+export function publicOrigin(request: Request) {
+  return requestOrigin(request);
 }
 
-export function originFromHeaders(headerList: { get(name: string): string | null }) {
-  const configured = process.env.APP_URL?.trim();
-  if (configured) return new URL(configured).origin;
-  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
-  const proto = headerList.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
+export { originFromHeaders };
 
 export function mcpResource(origin: string) {
   return new URL("/api/mcp", origin).toString();

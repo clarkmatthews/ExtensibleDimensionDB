@@ -1,4 +1,5 @@
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
+import { requestOrigin } from "@/lib/public-origin";
 import type { SsoSettings } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { assertAuthSecret } from "@/lib/session-token";
@@ -27,9 +28,8 @@ export async function ssoButton() {
  * The address the provider sends people back to. APP_URL is preferred, because the request's
  * Host header can be changed by the caller. Register exactly this value with the provider.
  */
-export function redirectUri(requestUrl: string) {
-  const base = process.env.APP_URL?.trim() || new URL(requestUrl).origin;
-  return new URL("/api/auth/oidc/callback", base).toString();
+export function redirectUri(request: Request) {
+  return new URL("/api/auth/oidc/callback", requestOrigin(request)).toString();
 }
 
 function flowKey() {

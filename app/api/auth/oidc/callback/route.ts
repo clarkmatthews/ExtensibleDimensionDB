@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   try {
     const { client, config } = await providerConfig(settings, decryptSecret(settings.clientSecret));
     // Rebuild the callback URL on the registered redirect URI, so the code exchange uses exactly that address.
-    const callback = new URL(redirectUri(request.url));
+    const callback = new URL(redirectUri(request));
     callback.search = request.nextUrl.search;
     const tokens = await client.authorizationCodeGrant(config, callback, {
       pkceCodeVerifier: flow.verifier,

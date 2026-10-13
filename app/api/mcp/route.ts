@@ -14,7 +14,7 @@ function unauthorized(message: string, request: Request) {
     status: 401,
     headers: {
       "Content-Type": "application/json",
-      "WWW-Authenticate": wwwAuthenticate(publicOrigin(request.url)),
+      "WWW-Authenticate": wwwAuthenticate(publicOrigin(request)),
     },
   });
 }

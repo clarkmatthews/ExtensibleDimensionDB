@@ -29,7 +29,7 @@ function clearCookie(response: NextResponse, request: NextRequest) {
 export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return seeOther(new URL("/login", request.url));
-  const origin = publicOrigin(request.url);
+  const origin = publicOrigin(request);
   const query = openOauthQuery(request.cookies.get(OAUTH_QUERY_COOKIE)?.value);
   const parsed = query ? parseAuthorizeQuery(new URLSearchParams(query), origin) : null;
   if (!parsed?.ok) return seeOther(new URL("/oauth/consent", request.url));
