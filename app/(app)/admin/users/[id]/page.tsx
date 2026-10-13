@@ -37,7 +37,8 @@ export default async function UserPage({
     prisma.workflowProcess.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-      include: { steps: { orderBy: { sortOrder: "asc" }, include: { group: true, assigneeUser: true } } },
+      // Notify steps notify a person directly; only action steps are assigned here.
+      include: { steps: { where: { kind: "ACTION" }, orderBy: { sortOrder: "asc" }, include: { group: true, assigneeUser: true } } },
     }),
   ]);
   if (!account) notFound();
@@ -221,14 +222,14 @@ export default async function UserPage({
               <p className="text-sm font-semibold">{process.name}</p>
               <div className="mt-2 space-y-2">
                 {process.steps.map((step) => {
-                  const inGroup = memberGroups.has(step.groupId);
+                  const inGroup = step.groupId ? memberGroups.has(step.groupId) : false;
                   const takenBy = step.assigneeUser && step.assigneeUser.id !== account.id ? step.assigneeUser.name : "";
                   return (
                     <label key={step.id} className="flex items-start gap-2 text-sm">
                       <input name="stepId" type="checkbox" value={step.id} defaultChecked={step.assigneeUserId === account.id} disabled={!inGroup} />
                       <span>
                         {step.name}
-                        <span className="text-muted"> · {step.group.name}</span>
+                        <span className="text-muted"> · {step.group?.name ?? "No group"}</span>
                         {takenBy ? <span className="text-muted"> · currently {takenBy}</span> : null}
                         {!inGroup ? <span className="text-muted"> · add this user to the group first</span> : null}
                       </span>

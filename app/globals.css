@@ -191,3 +191,12 @@ details[open] > .section-toggle .mark::before {
   text-transform: none;
   box-shadow: 0 8px 24px rgba(28, 25, 21, 0.12);
 }
+
+/* Workflow step editor: fields that apply to one step type only, switched as the Type changes. */
+.step-editor:has(select[name="kind"] option[value="NOTIFY"]:checked) .action-only {
+  display: none;
+}
+
+.step-editor:not(:has(select[name="kind"] option[value="NOTIFY"]:checked)) .notify-only {
+  display: none;
+}

@@ -2,7 +2,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
-import { moveWorkflowStep, saveWorkflow, saveWorkflowStep } from "@/lib/access-actions";
+import { ConfirmDelete } from "@/components/confirm-delete";
+import {
+  deleteWorkflow,
+  deleteWorkflowStep,
+  moveWorkflowStep,
+  previewWorkflowDelete,
+  previewWorkflowStepDelete,
+  saveWorkflow,
+  saveWorkflowStep,
+} from "@/lib/access-actions";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -181,42 +190,66 @@ export default async function WorkflowsPage({
                   ) : null}
                   <button className="btn" type="submit">Save workflow</button>
                 </form>
+                {canEdit ? (
+                  <div className="flex items-center gap-2">
+                    <ConfirmDelete id={process.id} label="Delete workflow" preview={previewWorkflowDelete} commit={deleteWorkflow} />
+                    <HelpTip text="Removes the workflow, its steps, and its run history. To stop it but keep the history, clear Active and save instead." />
+                  </div>
+                ) : null}
                 {process.kind === "TASK" ? (
                   <div className="space-y-3">
+                    <p className="label">Steps <HelpTip text="Steps run in order. An action step assigns work to a group, with a deadline and the attributes it requires. A notify step sends a notice to a group, a person, or both, and the sequence moves straight on to the next step." /></p>
                     {process.steps.map((step, index) => (
                       <div key={step.id} className="rounded-md border border-line p-3">
-                        <form action={saveWorkflowStep} className="space-y-3">
+                        <form action={saveWorkflowStep} className="step-editor space-y-3">
                           <input type="hidden" name="id" value={step.id} />
                           <input type="hidden" name="processId" value={process.id} />
+                          <p className="text-sm font-semibold text-pine">
+                            {index + 1}. {step.name}
+                            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{step.kind === "NOTIFY" ? "Notify" : "Action"}</span>
+                          </p>
                           <div className="grid gap-2 md:grid-cols-4">
                             <label>
                               <span className="label">Step</span>
-                              <input className="field" name="name" defaultValue={step.name} />
+                              <input className="field" name="name" defaultValue={step.name} required />
                             </label>
                             <label>
-                              <span className="label">Group <HelpTip text="The group that receives this action. Members see it on the dashboard unless one person is named below." /></span>
-                              <select className="field" name="groupId" defaultValue={step.groupId}>
-                                {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                              <span className="label">Type</span>
+                              <select className="field" name="kind" defaultValue={step.kind}>
+                                <option value="ACTION">Action</option>
+                                <option value="NOTIFY">Notify</option>
                               </select>
                             </label>
                             <label>
+                              <span className="label">Group <HelpTip text="Action: the group that receives the action. Notify: the group whose members are notified; leave it empty to notify only the person." /></span>
+                              <select className="field" name="groupId" defaultValue={step.groupId ?? ""}>
+                                <option value="">No group</option>
+                                {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                              </select>
+                            </label>
+                            <label className="action-only">
                               <span className="label">Assignee <HelpTip text="Optional. New actions for this step go to this person. They must belong to the group." /></span>
-                              <select className="field" name="assigneeUserId" defaultValue={step.assigneeUserId ?? ""}>
+                              <select className="field" name="assigneeUserId" defaultValue={step.kind === "ACTION" ? step.assigneeUserId ?? "" : ""}>
                                 <option value="">Anyone in the group</option>
                                 {users.filter((account) => account.groups.some((membership) => membership.groupId === step.groupId)).map((account) => (
                                   <option key={account.id} value={account.id}>{account.name}</option>
                                 ))}
                               </select>
                             </label>
-                            <label>
+                            <label className="notify-only">
+                              <span className="label">Person to notify <HelpTip text="Optional when a group is chosen. Anyone active can be notified; they do not need to be in the group." /></span>
+                              <select className="field" name="notifyUserId" defaultValue={step.kind === "NOTIFY" ? step.assigneeUserId ?? "" : ""}>
+                                <option value="">No one else</option>
+                                {users.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                              </select>
+                            </label>
+                            <label className="action-only">
                               <span className="label">Deadline days</span>
                               <input className="field" name="deadlineDays" type="number" min={1} defaultValue={step.deadlineDays} />
                             </label>
                           </div>
-                          <p className="text-sm">
-                            <Link className="font-semibold text-pine" href="/admin/access">Manage groups on Access</Link>
-                          </p>
-                          <div className="space-y-2">
+                          <div className="action-only space-y-2">
+                            <p className="label">Required attributes <HelpTip text="Done is refused until these attributes meet their rule." /></p>
                             {categories.map((category) => {
                               const selected = category.fields.some((field) => step.fields.some((item) => item.fieldId === field.id));
                               return (
@@ -246,7 +279,7 @@ export default async function WorkflowsPage({
                           </div>
                           <button className="btn-quiet" type="submit">Save step</button>
                         </form>
-                        <div className="mt-2 flex items-center gap-2">
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
                           {index > 0 ? (
                             <form action={moveWorkflowStep}>
                               <input type="hidden" name="id" value={step.id} />
@@ -261,34 +294,51 @@ export default async function WorkflowsPage({
                               <button className="btn-quiet" type="submit">Down</button>
                             </form>
                           ) : null}
+                          {canEdit ? <ConfirmDelete id={step.id} label="Delete step" preview={previewWorkflowStepDelete} commit={deleteWorkflowStep} /> : null}
                         </div>
                       </div>
                     ))}
-                    <form action={saveWorkflowStep} className="grid items-end gap-2 md:grid-cols-[1fr_1fr_1fr_8rem_auto]">
+                    <form action={saveWorkflowStep} className="step-editor grid items-end gap-2 rounded-md border border-dashed border-line p-3 md:grid-cols-3">
                       <input type="hidden" name="processId" value={process.id} />
                       <label>
                         <span className="label">New step</span>
                         <input className="field" name="name" placeholder="Step name" required />
                       </label>
                       <label>
-                        <span className="label">Group</span>
-                        <select className="field" name="groupId" required>
-                          <option value="">Group</option>
-                          {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                        <span className="label">Type</span>
+                        <select className="field" name="kind" defaultValue="ACTION">
+                          <option value="ACTION">Action</option>
+                          <option value="NOTIFY">Notify</option>
                         </select>
                       </label>
                       <label>
+                        <span className="label">Group</span>
+                        <select className="field" name="groupId" defaultValue="">
+                          <option value="">No group</option>
+                          {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                        </select>
+                      </label>
+                      <label className="action-only">
                         <span className="label">Assignee</span>
                         <select className="field" name="assigneeUserId" defaultValue="">
                           <option value="">Anyone in the group</option>
                           {users.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
                         </select>
                       </label>
-                      <label>
+                      <label className="notify-only">
+                        <span className="label">Person to notify</span>
+                        <select className="field" name="notifyUserId" defaultValue="">
+                          <option value="">No one else</option>
+                          {users.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                        </select>
+                      </label>
+                      <label className="action-only">
                         <span className="label">Deadline days</span>
                         <input className="field" name="deadlineDays" type="number" min={1} defaultValue={1} />
                       </label>
-                      <button className="btn" type="submit">Add step</button>
+                      <div className="md:col-span-3">
+                        <button className="btn" type="submit">Add step</button>
+                      </div>
                     </form>
                   </div>
                 ) : null}

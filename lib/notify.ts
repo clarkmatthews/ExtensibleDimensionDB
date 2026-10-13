@@ -2,11 +2,11 @@ import { deliverMail } from "@/lib/mail";
 import { prisma } from "@/lib/prisma";
 import { siteName } from "@/lib/site";
 
-export async function notifyUsers(userIds: string[], message: string, taskId?: string, fieldChangeId?: string) {
+export async function notifyUsers(userIds: string[], message: string, taskId?: string, fieldChangeId?: string, locationId?: string) {
   const unique = [...new Set(userIds)].filter(Boolean);
   if (!unique.length) return;
   await prisma.notification.createMany({
-    data: unique.map((userId) => ({ userId, message, taskId, fieldChangeId })),
+    data: unique.map((userId) => ({ userId, message, taskId, fieldChangeId, locationId })),
   });
   const users = await prisma.user.findMany({
     where: { id: { in: unique }, isActive: true },
@@ -15,10 +15,12 @@ export async function notifyUsers(userIds: string[], message: string, taskId?: s
   const recipients = users.map((user) => user.email);
   if (!recipients.length) return;
   const name = await siteName();
+  const base = process.env.APP_URL?.trim();
+  const link = locationId && base ? `\n\nOpen the record: ${new URL(`/dimensions/${locationId}`, base).toString()}` : "";
   await deliverMail({
     to: recipients,
-    subject: fieldChangeId ? `${name} change` : `${name} action`,
-    text: message,
+    subject: fieldChangeId ? `${name} change` : taskId ? `${name} action` : `${name} notice`,
+    text: message + link,
   });
 }
 
