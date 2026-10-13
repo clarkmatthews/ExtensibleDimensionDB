@@ -147,3 +147,15 @@ describe("public origin behind a reverse proxy", () => {
     expect(requestOrigin(request)).toBe("http://localhost:3000");
   });
 });
+
+describe("consent page form-action", () => {
+  it("lets the consent form hand back to each assistant, and nowhere else", async () => {
+    const { assistantFormTargets } = await import("@/lib/ai-products");
+    const targets = assistantFormTargets().split(" ");
+    expect(targets[0]).toBe("'self'");
+    for (const host of ["https://claude.ai", "https://chatgpt.com", "https://chat.openai.com", "https://grok.com", "https://grok.x.ai"]) {
+      expect(targets).toContain(host);
+    }
+    expect(targets.every((target) => target === "'self'" || target.startsWith("https://"))).toBe(true);
+  });
+});

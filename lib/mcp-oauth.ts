@@ -1,4 +1,5 @@
 import { createHash, createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
+import { AI_PRODUCTS } from "@/lib/ai-products";
 import { originFromHeaders, requestOrigin } from "@/lib/public-origin";
 import { assertAuthSecret } from "@/lib/session-token";
 
@@ -8,11 +9,7 @@ import { assertAuthSecret } from "@/lib/session-token";
  * until an administrator turns it on.
  */
 
-export const AI_PRODUCTS = {
-  CHATGPT: { label: "ChatGPT", hosts: ["chatgpt.com", "chat.openai.com"] },
-  CLAUDE: { label: "Claude", hosts: ["claude.ai"] },
-  GROK: { label: "Grok", hosts: ["grok.com", "grok.x.ai"] },
-} as const;
+export { AI_PRODUCTS };
 
 export type AiProduct = keyof typeof AI_PRODUCTS;
 

@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
+import { assistantFormTargets } from "./lib/ai-products";
 
 const dev = process.env.NODE_ENV !== "production";
-const contentSecurityPolicy = [
+const policy = (formAction: string) => [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
@@ -10,9 +11,12 @@ const contentSecurityPolicy = [
   "connect-src 'self'",
   "frame-ancestors 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  `form-action ${formAction}`,
   "object-src 'none'",
 ].join("; ");
+const contentSecurityPolicy = policy("'self'");
+// The assistant consent form redirects back to ChatGPT, Claude, or Grok after Allow or Cancel.
+const consentSecurityPolicy = policy(assistantFormTargets());
 
 const nextConfig: NextConfig = {
   experimental: {
@@ -37,6 +41,11 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         ],
+      },
+      {
+        // Listed after the general rule so its policy replaces the general one on this page.
+        source: "/oauth/consent",
+        headers: [{ key: "Content-Security-Policy", value: consentSecurityPolicy }],
       },
     ];
   },
