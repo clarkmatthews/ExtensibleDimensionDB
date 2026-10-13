@@ -56,6 +56,9 @@ export async function saveStore(formData: FormData) {
   revalidatePath("/dimensions");
   revalidatePath("/dashboard");
   revalidatePath("/changelog");
+  // A new record returns to its record type's list, which confirms it and links to it.
+  // Saving an existing record stays on that record.
+  if (result.created) redirect(`/dimensions?type=${encodeURIComponent(recordTypeId)}&created=${encodeURIComponent(location.id)}`);
   redirect(`/dimensions/${location.id}`);
 }
 

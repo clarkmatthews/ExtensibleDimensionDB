@@ -46,6 +46,9 @@ export default async function StoresPage({
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const slice = rows.slice((page - 1) * pageSize, page * pageSize);
   const canCreate = moduleEdit && (user.isAdmin || fields.some((field) => fieldAccess(access, field.id, field.categoryId).canUpdate));
+  // Set after a new record is saved, so the list can confirm it and link to it.
+  const createdId = typeof params.created === "string" ? params.created : "";
+  const createdShown = Boolean(createdId) && rows.some((row) => row.id === createdId);
 
   return (
     <div className="space-y-4">
@@ -67,6 +70,15 @@ export default async function StoresPage({
           ) : null}
         </div>
       </div>
+      {createdId ? (
+        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-pine" role="status">
+          {current.name} record created.{" "}
+          <Link className="font-semibold underline" href={`/dimensions/${createdId}`}>
+            Open it
+          </Link>
+          {createdShown ? "." : ". The list's filters hide it."}
+        </p>
+      ) : null}
       {types.length > 1 ? (
         <nav className="flex flex-wrap gap-2" aria-label="Record types">
           {types.map((type) => (
