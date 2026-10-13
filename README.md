@@ -4,7 +4,7 @@
 
 Extensible Dimension Database is a metadata-driven data platform for the records that run your operation: locations, products, vendors, assets, or anything else you need to track. Administrators shape the data model right in the browser. They add record types, dimensions, and attributes, set validation, build cascading choice lists, link records to each other, and decide who can see or edit each field. There are no migrations, no deploys, and no developer in the loop. Everyone else gets a clean, searchable grid and record forms that change as the model changes.
 
-The structure is only the start. Built-in workflows turn data changes into work: a new record or a changed field can notify the right people, or start an action sequence with assignees, deadlines, required fields, and overdue alerts. Every edit is recorded with the before value, the after value, who made it, and when, and every administrative change lands in an audit log. Access is granted down to the single attribute, by user, group, or department, and people can sign in with your identity provider.
+The structure is only the start. Built-in workflows turn data changes into work: a new record or a changed field can notify the right people, or start an action sequence with assignees, deadlines, required fields, and overdue alerts. Every edit is recorded with the before value, the after value, who made it, and when, and every administrative change lands in an audit log. Access is granted down to the single attribute, by user or group, and people can sign in with your identity provider.
 
 The data is also built to be used outside the app:
 
@@ -82,7 +82,7 @@ The menu groups the screens into the main work area, Dimension Config, People Co
 - **Attributes** are the fields on a record. Each has a key, a display name, a description, a type, and optional rules: required, maximum length, a regular expression, a default, a unique identifier, an active-filter checkbox, or an automatic created date. Types are text, big text, numeric, date, time, date and time, checkbox, radio, list, zip code, address, email, phone, coordinate, and **link to record**.
 - **Links** connect records across types. A link attribute points to one or several records of a chosen type, such as a location's vendors. People pick linked records by their unique identifier, and every linked record lists what points to it under **Linked from**.
 - **Lists** supply choices. A list can follow another list, so cities follow states, and new parent-child catalogs can be added the same way.
-- **People** are users, departments, and groups. Screens and record access are granted to a user, a group, or a department. A user grant overrides a group grant, which overrides a department grant.
+- **People** are users and groups. Screens and record access are granted to a user or a group. A person's own grant overrides their groups, and a person in several groups gets the combined access.
 - **Workflows** are a notification or an action sequence. They start when a record is created, when an attribute changes, or by hand.
 
 ## Working with records
@@ -142,7 +142,7 @@ The dashboard lists open actions assigned to you or to a group you belong to, th
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
-The action report reviews actions and their history. Filter by department, group, user, dates, and record. Open actions can be postponed or suspended from here.
+The action report reviews actions and their history. Filter by group, user, dates, and record. Open actions can be postponed or suspended from here.
 
 ![Action report](docs/screenshots/action-report.png)
 
@@ -215,7 +215,7 @@ Create a list, optionally set which list it follows, and manage its items. Child
 
 ### People and permissions
 
-**Permissions** sets None, View, or Edit on each screen for a user or a department. Dimension grants control who can add, hide, or edit attributes, who can see records, and who can view or update each attribute.
+**Permissions** sets screen access for a user or a group: None, View, or Edit, and for a user also **From groups**, which follows their groups. Dimension grants control who can add, hide, or edit attributes; for a user they also set who can see records and view or update each attribute.
 
 ![Permissions](docs/screenshots/permissions.png)
 
@@ -225,7 +225,9 @@ Create a list, optionally set which list it follows, and manage its items. Child
 
 ![A user account](docs/screenshots/user.png)
 
-**Access** creates departments and groups. A group can grant view or edit for a whole dimension or for specific attributes.
+**Access** creates groups. A group can grant view or edit for a whole dimension or for specific attributes; its screens are set on Permissions.
+
+**Upgrading from a version with departments.** Each department becomes a group with the same name, whose members are everyone in the groups that were linked to it, and its grants move across unchanged. Where one of a person's groups used to hold back something their department granted, that person now has the department's access. Run `docker compose exec app npm run report:department-merge` after upgrading to list exactly who gained what.
 
 ![Access](docs/screenshots/access.png)
 

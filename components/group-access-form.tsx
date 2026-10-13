@@ -31,10 +31,10 @@ export function GroupAccessForm({
       <div>
         <h3 className="flex items-center text-sm font-semibold">
           Dimension access
-          <HelpTip text="View can see an attribute. Edit can change it. None grants nothing from this group, so a department grant can still apply. Specific attributes with None blocks the department for those attributes." />
+          <HelpTip text="View can see an attribute. Edit can change it. None grants nothing from this group; a member can still get access from another group they belong to." />
         </h3>
         <p className="mt-1 text-sm text-muted">
-          Members receive this access. View can see an attribute. Edit can change it. None grants nothing from this group, so a department grant can still apply. Entire dimension covers attributes added later.
+          Members receive this access. View can see an attribute. Edit can change it. None grants nothing from this group. Entire dimension covers attributes added later.
         </p>
       </div>
       {categories.length === 0 ? <p className="text-sm text-muted">No active dimensions yet.</p> : null}
@@ -67,7 +67,7 @@ export function GroupAccessForm({
                   onChange={() => setScopes((current) => ({ ...current, [category.id]: "fields" }))}
                 />
                 Specific attributes
-                <HelpTip text="Set none, view, or edit on each attribute. Missing attributes stay at none, and the department grant does not fill them in." />
+                <HelpTip text="Set none, view, or edit on each attribute. Attributes left at none get nothing from this group." />
               </label>
             </div>
             <div className={specific ? "mt-3 space-y-2" : "hidden"}>

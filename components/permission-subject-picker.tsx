@@ -7,19 +7,19 @@ type Option = { id: string; label: string };
 export function PermissionSubjectPicker({
   subjectType,
   subjectId,
-  departments,
+  groups,
   users,
 }: {
   subjectType: string;
   subjectId: string;
-  departments: Option[];
+  groups: Option[];
   users: Option[];
 }) {
   const router = useRouter();
-  const options = subjectType === "DEPARTMENT" ? departments : users;
+  const options = subjectType === "GROUP" ? groups : users;
 
   function open(type: string, id: string) {
-    const list = type === "DEPARTMENT" ? departments : users;
+    const list = type === "GROUP" ? groups : users;
     const nextId = list.some((item) => item.id === id) ? id : (list[0]?.id ?? "");
     const params = new URLSearchParams({ subjectType: type });
     if (nextId) params.set("subjectId", nextId);
@@ -32,7 +32,7 @@ export function PermissionSubjectPicker({
         <span className="label">Who</span>
         <select className="field w-auto" value={subjectType} onChange={(event) => open(event.target.value, "")}>
           <option value="USER">User</option>
-          <option value="DEPARTMENT">Department</option>
+          <option value="GROUP">Group</option>
         </select>
       </label>
       <label>

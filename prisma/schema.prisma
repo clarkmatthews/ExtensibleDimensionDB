@@ -32,7 +32,6 @@ enum ChoiceSource {
 }
 
 enum SubjectType {
-  DEPARTMENT
   GROUP
   USER
 }
@@ -129,21 +128,21 @@ enum StepFieldRule {
   MUST_CHANGE
 }
 
-model Department {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String   @default("")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  groups      Group[]
+/// Departments were merged into groups. Each row records which group replaced a department and
+/// which groups were linked to it, so the access report can compare before and after. Safe to
+/// delete once the report has been reviewed.
+model DepartmentMerge {
+  departmentId   String   @id
+  departmentName String
+  groupId        String
+  linkedGroupIds String[]
+  mergedAt       DateTime @default(now())
 }
 
 model Group {
   id           String      @id @default(cuid())
   name         String
   description  String      @default("")
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
   isActive     Boolean     @default(true)
   createdAt    DateTime    @default(now())
   members      UserGroup[]

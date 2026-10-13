@@ -20,8 +20,8 @@ export default async function PermissionsPage({
   const access = await loadAccess(user);
   if (!canViewModule(access, "PERMISSIONS")) return <ModuleDenied />;
   const canEdit = canEditModule(access, "PERMISSIONS");
-  const [departments, users, categories] = await Promise.all([
-    prisma.department.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+  const [groups, users, categories] = await Promise.all([
+    prisma.group.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     prisma.user.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     prisma.category.findMany({
       where: { isActive: true },
@@ -29,45 +29,36 @@ export default async function PermissionsPage({
       include: { fields: { orderBy: { sortOrder: "asc" } }, permissions: true },
     }),
   ]);
-  const subjectType = params.subjectType === "DEPARTMENT" ? "DEPARTMENT" : "USER";
-  const options = subjectType === "DEPARTMENT" ? departments : users;
+  const subjectType = params.subjectType === "GROUP" ? "GROUP" : "USER";
+  const isGroup = subjectType === "GROUP";
+  const options = isGroup ? groups : users;
   const subjectId = options.some((item) => item.id === params.subjectId) ? params.subjectId! : (options[0]?.id ?? "");
   const visibleCategories = categories.filter((category) => user.isAdmin || categoryAccess(access, category.id).canAssignPermissions);
-  const fieldPerms = subjectId
-    ? await prisma.fieldPermission.findMany({
-        where: { subjectType: subjectType as "DEPARTMENT" | "GROUP" | "USER", subjectId },
-      })
-    : [];
-  const categoryPerms = subjectId
-    ? await prisma.categoryPermission.findMany({
-        where: { subjectType: subjectType as "DEPARTMENT" | "GROUP" | "USER", subjectId },
-      })
-    : [];
-  const modulePerms = subjectId
-    ? await prisma.modulePermission.findMany({
-        where: { subjectType: subjectType as "DEPARTMENT" | "USER", subjectId },
-      })
-    : [];
-  const subjectIsAdmin =
-    subjectType === "USER" && users.some((account) => account.id === subjectId && account.isAdmin);
+  const [fieldPerms, categoryPerms, modulePerms] = subjectId
+    ? await Promise.all([
+        prisma.fieldPermission.findMany({ where: { subjectType, subjectId } }),
+        prisma.categoryPermission.findMany({ where: { subjectType, subjectId } }),
+        prisma.modulePermission.findMany({ where: { subjectType, subjectId } }),
+      ])
+    : [[], [], []];
+  const subjectIsAdmin = !isGroup && users.some((account) => account.id === subjectId && account.isAdmin);
 
   return (
     <div className="space-y-4">
       <h1 className="flex items-center text-2xl font-semibold">
         Permissions
-        <HelpTip text="Choose a user or a department. A direct user grant overrides a group grant, which overrides a department grant. An empty dimension grant is not stored, so group and department access still apply. Update on an attribute also allows viewing it. Administrators always have edit access to every page." />
+        <HelpTip text="Choose a user or a group. A person's own grant overrides their groups; a person in several groups gets the combined access. Update on an attribute also allows viewing it. Administrators always have edit access to every page." />
       </h1>
       {params.error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{params.error}</p> : null}
       {params.saved ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-pine">Permissions saved.</p> : null}
       <p className="max-w-3xl text-sm text-muted">
-        Choose a user or department. Group view and edit access for dimension attributes is set on{" "}
-        <Link className="font-semibold text-pine" href="/admin/access">Access</Link>.
-        A direct user grant overrides a group grant, which overrides a department grant. An empty dimension grant is not stored, so group and department access still apply. Update on an attribute also allows viewing it.
+        Choose a user or a group. A person&apos;s own grant overrides their groups, and a person in several groups gets the combined access. A group&apos;s view and edit access to dimensions and attributes is set on{" "}
+        <Link className="font-semibold text-pine" href="/admin/access">Access</Link>. Update on an attribute also allows viewing it.
       </p>
       <PermissionSubjectPicker
         subjectType={subjectType}
         subjectId={subjectId}
-        departments={departments.map((item) => ({ id: item.id, label: item.name }))}
+        groups={groups.map((item) => ({ id: item.id, label: item.name }))}
         users={users.map((item) => ({ id: item.id, label: `${item.name} (${item.email})` }))}
       />
       {subjectId ? (
@@ -78,16 +69,18 @@ export default async function PermissionsPage({
           <input type="hidden" name="saveNavigation" value="1" />
           <section className="panel space-y-3 p-4">
             <h2 className="flex items-center font-semibold">
-              Navigation
-              <HelpTip text="None hides the item. View opens it without changes. Edit can change it. A user choice overrides that person's department." />
+              Screens
+              <HelpTip text={isGroup ? "Members can open the screens set to View or Edit. A person's own setting overrides their groups." : "From groups uses this person's groups. None, View, or Edit overrides their groups for that screen."} />
             </h2>
             <p className="text-sm text-muted">
-              None hides the item. View opens it without changes. Edit can change it. A user choice overrides that person&apos;s department. Administrators always have edit for every item.
+              {isGroup
+                ? "Members can open screens set to View, and change things on screens set to Edit. A person in several groups gets the higher level. Administrators always have edit for every screen."
+                : "From groups gives this person what their groups allow. None, View, or Edit sets this person's own access and overrides their groups. Administrators always have edit for every screen."}
             </p>
             {subjectIsAdmin ? (
               <p className="text-sm text-muted">This person is an administrator, so these choices apply only if that access is removed.</p>
             ) : null}
-            <NavigationChoices modulePerms={modulePerms} />
+            <NavigationChoices modulePerms={modulePerms} inherit={!isGroup} />
           </section>
           {visibleCategories.map((category) => {
             const grant = categoryPerms.find((row) => row.categoryId === category.id);
@@ -100,9 +93,13 @@ export default async function PermissionsPage({
                   <Check name={`cat:${category.id}:edit`} label="Edit attributes" checked={grant?.canEditFields} help="Change an attribute's definition, such as its type, pattern, and default." />
                   <Check name={`cat:${category.id}:category`} label="Edit dimension" checked={grant?.canEditCategory} help="Rename this dimension, change its description, and reorder it." />
                   <Check name={`cat:${category.id}:assign`} label="Assign permissions" checked={grant?.canAssignPermissions} help="Grant this dimension to other people." />
-                  <Check name={`cat:${category.id}:view`} label="View data" checked={grant?.canViewData} help="See values in this dimension. An attribute still needs its own view grant." />
+                  {isGroup ? null : <Check name={`cat:${category.id}:view`} label="View data" checked={grant?.canViewData} help="See values in this dimension. An attribute still needs its own view grant." />}
                 </div>
-                <div className="mt-3 space-y-1 text-sm">
+                {isGroup ? (
+                  <p className="mt-2 text-sm text-muted">
+                    View and edit access for this group is set on <Link className="font-semibold text-pine" href="/admin/access">Access</Link>.
+                  </p>
+                ) : <div className="mt-3 space-y-1 text-sm">
                   {category.fields.map((field) => {
                     const fieldGrant = fieldPerms.find((row) => row.fieldId === field.id);
                     return (
@@ -115,7 +112,7 @@ export default async function PermissionsPage({
                       </div>
                     );
                   })}
-                </div>
+                </div>}
               </section>
             );
           })}
@@ -126,30 +123,33 @@ export default async function PermissionsPage({
         </form>
       ) : (
         <p className="text-sm text-muted">
-          {subjectType === "USER" ? "Create a user before assigning permissions." : "Create a department before assigning permissions."}
+          {isGroup ? "Create a group on Access before assigning permissions." : "Create a user before assigning permissions."}
         </p>
       )}
     </div>
   );
 }
 
-function NavigationChoices({ modulePerms }: { modulePerms: { module: string; grantLevel: string }[] }) {
+function NavigationChoices({ modulePerms, inherit }: { modulePerms: { module: string; grantLevel: string }[]; inherit: boolean }) {
+  const choices = inherit ? (["INHERIT", "NONE", "VIEW", "EDIT"] as const) : (["NONE", "VIEW", "EDIT"] as const);
+  const labels: Record<string, string> = { INHERIT: "From groups", NONE: "None", VIEW: "View", EDIT: "Edit" };
   return (
     <div className="space-y-2">
       {NAV_MODULES.map((item, index) => {
         const previousGroup: string = index > 0 ? NAV_MODULES[index - 1].group : "";
         const header = item.group && item.group !== previousGroup ? item.group : "";
-        const level = modulePerms.find((row) => row.module === item.id)?.grantLevel ?? "NONE";
+        const stored = modulePerms.find((row) => row.module === item.id)?.grantLevel;
+        const level = stored ?? (inherit ? "INHERIT" : "NONE");
         return (
           <div key={item.id}>
             {header ? <p className="pt-2 text-sm font-semibold">{header}</p> : null}
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line py-2 text-sm">
               <span>{item.label}</span>
-              <span className="flex gap-3">
-                {(["NONE", "VIEW", "EDIT"] as const).map((choice) => (
+              <span className="flex flex-wrap gap-3">
+                {choices.map((choice) => (
                   <label key={choice} className="flex items-center gap-2">
                     <input type="radio" name={`nav:${item.id}`} value={choice} defaultChecked={level === choice} />
-                    {choice === "NONE" ? "None" : choice === "VIEW" ? "View" : "Edit"}
+                    {labels[choice]}
                   </label>
                 ))}
               </span>

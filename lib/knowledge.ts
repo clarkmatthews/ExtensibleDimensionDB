@@ -37,7 +37,7 @@ export type SchemaDimension = {
 export async function loadKnowledgeUser(email: string): Promise<AccessContext> {
   const user = await prisma.user.findUnique({
     where: { email },
-    include: { groups: { include: { group: { select: { departmentId: true } } } } },
+    include: { groups: true },
   });
   if (!user || !user.isActive) {
     throw new Error(`No active user for ${email || "MCP_USER_EMAIL"}.`);
