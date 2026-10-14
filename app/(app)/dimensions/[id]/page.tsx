@@ -12,7 +12,8 @@ import { getCurrentUser } from "@/lib/session";
 import { manualProcessesFor } from "@/lib/workflow";
 import { loadFieldChoices } from "@/lib/list-items";
 import { WatchToggle } from "@/components/watch-toggle";
-import { archiveRecord, restoreRecord, startWorkflow } from "@/lib/store-actions";
+import { ConfirmArchive } from "@/components/confirm-archive";
+import { restoreRecord, startWorkflow } from "@/lib/store-actions";
 import { localDateInput, storedToInput } from "@/lib/values";
 
 export default async function StorePage({
@@ -36,6 +37,12 @@ export default async function StorePage({
   if (!ownType?.canView) return <ModuleDenied />;
   // Archiving and restoring need the same right as adding records of this type.
   const canArchive = ownType.canAdd;
+  const [recordLabel, openWorkflows] = canArchive && location.isActive
+    ? await Promise.all([
+        recordLabels([location.id]).then((labels) => labels.get(location.id) ?? "this record"),
+        prisma.storeProcess.count({ where: { locationId: location.id, status: "ACTIVE", suspended: false } }),
+      ])
+    : ["this record", 0];
   const moduleEdit = canEditModule(access, "STORES");
   const archived = !location.isActive;
   const archivedBy = location.archivedById
@@ -179,11 +186,7 @@ export default async function StorePage({
       ) : null}
       <StoreForm locationId={location.id} categories={[...categories.values()]} readOnly={!canUpdate || archived} />
       {!archived && canArchive ? (
-        <form action={archiveRecord} className="flex items-center">
-          <input type="hidden" name="locationId" value={location.id} />
-          <button className="btn-quiet" type="submit">Archive record</button>
-          <HelpTip text="Hides the record from the grid, exports, the share API, and AI knowledge, and pauses its open workflows. Its values and changelog are kept. Archived records are listed under Archived on the Dimension page and can be restored." />
-        </form>
+        <ConfirmArchive locationId={location.id} label={recordLabel} openWorkflows={openWorkflows} />
       ) : null}
       {!archived && canUpdate && manualProcesses.length ? (
         <form action={startWorkflow} className="panel flex flex-wrap items-end gap-3 p-4">
