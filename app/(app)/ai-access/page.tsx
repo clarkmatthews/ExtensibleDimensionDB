@@ -110,6 +110,7 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
       : Promise.resolve([]),
   ]);
   const shown = fresh && mine.some((token) => token.id === fresh.tokenId) ? fresh.token : null;
+  const showDeveloper = user.isAdmin || mine.some((token) => !token.expiresAt || token.expiresAt > new Date());
   const oauth = settings ?? OAUTH_OFF;
   const anyEnabled = PRODUCTS.some((product) => productEnabled(oauth, product));
   const everyone = [
@@ -157,7 +158,7 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
           <input className="field flex-1 font-mono" readOnly value={endpoint} aria-label="Connection URL" />
           <CopyButton value={endpoint} label="Copy URL" />
         </div>
-        <p className="text-xs text-muted">Both ways of connecting below use this address.</p>
+        <p className="text-xs text-muted">{showDeveloper ? "Both ways of connecting below use this address." : "Chat assistants connect with this address."}</p>
       </section>
 
       {user.isAdmin ? (
@@ -228,7 +229,8 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
         </details>
       ) : null}
 
-      <div className="grid items-start gap-6 lg:grid-cols-2">
+      {/* Developer tools are for administrators. Others see only their existing tokens, so they can revoke them. */}
+      <div className={`grid items-start gap-6 ${showDeveloper ? "lg:grid-cols-2" : ""}`}>
         <section className="panel min-w-0 space-y-5 p-5" aria-labelledby="chat-heading">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -291,11 +293,17 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
           </div>
         </section>
 
+        {showDeveloper ? (
         <section className="panel min-w-0 space-y-5 p-5" aria-labelledby="dev-heading">
           <div className="space-y-1">
-            <h2 id="dev-heading" className="text-lg font-semibold">Developer tools</h2>
-            <p className="text-sm text-muted">Claude Code, Cursor, the Grok CLI, and API calls use a personal token you create here.</p>
+            <h2 id="dev-heading" className="text-lg font-semibold">{user.isAdmin ? "Developer tools" : "Your tokens"}</h2>
+            <p className="text-sm text-muted">
+              {user.isAdmin
+                ? "Claude Code, Cursor, the Grok CLI, and API calls use a personal token you create here."
+                : "Personal tokens are created by administrators. You can revoke the tokens you already have."}
+            </p>
           </div>
+          {user.isAdmin ? <>
 
           {shown ? (
             <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -338,9 +346,10 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
             <h3 className="text-sm font-semibold">Setup</h3>
             <SetupTabs tabs={setupTabs(endpoint, shown ?? "edb_your_token")} />
           </div>
+          </> : null}
 
           <div className="space-y-2">
-            <h3 className="text-sm font-semibold">Your tokens</h3>
+            {user.isAdmin ? <h3 className="text-sm font-semibold">Your tokens</h3> : null}
             {mine.length === 0 ? (
               <p className="rounded-md border border-dashed border-line px-3 py-4 text-center text-sm text-muted">No tokens yet.</p>
             ) : (
@@ -364,6 +373,7 @@ export default async function AiAccessPage({ searchParams }: { searchParams: Pro
             )}
           </div>
         </section>
+        ) : null}
       </div>
     </div>
   );
