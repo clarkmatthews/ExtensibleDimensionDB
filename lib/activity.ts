@@ -124,7 +124,8 @@ export type Attention = {
   overdue: number;
   dueSoon: number;
   pendingProposals: number;
-  reviewedProposals: { id: string; status: string; reason: string; reviewer: string; reviewedAt: Date }[];
+  /** Reviews since the last visit, one entry per outcome and reviewer. */
+  reviewedProposals: { status: string; reviewer: string; count: number; latest: Date }[];
   watchedChanged: number;
 };
 
@@ -174,11 +175,12 @@ export async function loadDashboardActivity(input: {
           where: { status: "PENDING", ...(access.user.isAdmin ? {} : { proposedById: { not: userId } }) },
         })
       : Promise.resolve(0),
+    // Reviews of this person's proposals since their last visit: shown once, then they drop off.
     prisma.changeProposal.findMany({
-      where: { proposedById: userId, status: { in: ["APPLIED", "REJECTED", "FAILED"] }, reviewedAt: { gte: week } },
-      include: { reviewer: { select: { name: true } } },
+      where: { proposedById: userId, status: { in: ["APPLIED", "REJECTED", "FAILED"] }, reviewedAt: { gt: since ?? week } },
+      select: { status: true, reviewedAt: true, reviewer: { select: { name: true } } },
       orderBy: { reviewedAt: "desc" },
-      take: 5,
+      take: 500,
     }),
   ]);
 
@@ -210,13 +212,24 @@ export async function loadDashboardActivity(input: {
       overdue,
       dueSoon,
       pendingProposals,
-      reviewedProposals: reviewed
-        .filter((row) => row.reviewedAt)
-        .map((row) => ({ id: row.id, status: row.status, reason: row.reason, reviewer: row.reviewer?.name ?? "", reviewedAt: row.reviewedAt! })),
+      reviewedProposals: summarizeReviews(reviewed.map((row) => ({ status: row.status, reviewer: row.reviewer?.name ?? "", reviewedAt: row.reviewedAt! }))),
       watchedChanged: watched.filter((group) => group.isNew).length,
     },
     watched,
     watchingCount: watchedIds.length,
     mine,
   };
+}
+
+/** Groups reviews by outcome and reviewer, newest group first, so a batch shows as one line. */
+export function summarizeReviews(rows: { status: string; reviewer: string; reviewedAt: Date }[]) {
+  const groups = new Map<string, { status: string; reviewer: string; count: number; latest: Date }>();
+  for (const row of rows) {
+    const key = `${row.status}\u0000${row.reviewer}`;
+    const group = groups.get(key) ?? { status: row.status, reviewer: row.reviewer, count: 0, latest: row.reviewedAt };
+    group.count += 1;
+    if (row.reviewedAt > group.latest) group.latest = row.reviewedAt;
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => b.latest.getTime() - a.latest.getTime());
 }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
+import { BulkReview } from "@/components/bulk-review";
 import { ModuleDenied } from "@/components/module-denied";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -13,7 +14,25 @@ export const metadata = { title: "AI proposals" };
 
 const SAVED: Record<string, string> = { approved: "Proposal approved and saved.", rejected: "Proposal rejected." };
 
-export default async function ProposalsPage({ searchParams }: { searchParams: Promise<{ error?: string; saved?: string }> }) {
+/** The summary after Approve all or Reject all. */
+function bulkSummary(params: { saved?: string; done?: string; failed?: string; skipped?: string }) {
+  if (params.saved !== "approvedAll" && params.saved !== "rejectedAll") return null;
+  const count = (raw?: string) => Math.max(0, Number.parseInt(raw ?? "0", 10) || 0);
+  const done = count(params.done);
+  const failed = count(params.failed);
+  const skipped = count(params.skipped);
+  const approve = params.saved === "approvedAll";
+  const parts = [`${approve ? "Approved and saved" : "Rejected"} ${done} ${done === 1 ? "proposal" : "proposals"}.`];
+  if (failed) parts.push(`${failed} could not be ${approve ? "applied" : "rejected"}; see Recently reviewed for the reason.`);
+  if (skipped) parts.push(`${skipped} had already been reviewed by someone else.`);
+  return { text: parts.join(" "), problem: failed > 0 };
+}
+
+export default async function ProposalsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string; done?: string; failed?: string; skipped?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const access = await loadAccess(user);
@@ -38,6 +57,9 @@ export default async function ProposalsPage({ searchParams }: { searchParams: Pr
   const labels = await recordLabels([...pending, ...reviewed].flatMap((row) => [row.locationId ?? "", row.appliedLocationId ?? ""]));
   const typeName = (id: string) => types.find((type) => type.id === id)?.name ?? "record";
   const nowValues = new Map(await Promise.all(pending.map(async (row) => [row.id, await currentValues(row)] as const)));
+  // Approve all and Reject all cover the proposals listed here that this person may review.
+  const reviewable = canReview ? pending.filter((row) => !reviewBlocker(access, row)).map((row) => row.id) : [];
+  const bulk = bulkSummary(params);
 
   return (
     <div className="space-y-6">
@@ -52,10 +74,12 @@ export default async function ProposalsPage({ searchParams }: { searchParams: Pr
       </div>
       {params.error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{params.error}</p> : null}
       {SAVED[params.saved ?? ""] ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-pine">{SAVED[params.saved ?? ""]}</p> : null}
+      {bulk ? <p className={`rounded-md px-3 py-2 text-sm ${bulk.problem ? "bg-amber-50 text-warn" : "bg-emerald-50 text-pine"}`} role="status">{bulk.text}</p> : null}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Waiting for review</h2>
+        <h2 className="text-lg font-semibold">Waiting for review{pending.length ? ` (${pending.length})` : ""}</h2>
         {pending.length === 0 ? <p className="text-sm text-muted">Nothing is waiting.</p> : null}
+        {reviewable.length > 1 ? <BulkReview ids={reviewable} waiting={pending.length} /> : null}
         {pending.map((proposal) => {
           const changes = proposal.changes as unknown as ProposedChange[];
           const current = nowValues.get(proposal.id) ?? new Map<string, string>();

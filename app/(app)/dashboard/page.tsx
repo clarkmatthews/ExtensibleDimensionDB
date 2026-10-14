@@ -87,10 +87,10 @@ export default async function DashboardPage({
     attention.watchedChanged
       ? { href: "#watched", text: `${attention.watchedChanged} watched ${attention.watchedChanged === 1 ? "record" : "records"} changed since your last visit`, urgent: false }
       : null,
-    ...attention.reviewedProposals.map((proposal) => ({
+    ...attention.reviewedProposals.map((group) => ({
       href: "/proposals",
-      text: `Your proposal${proposal.reason ? ` "${proposal.reason.slice(0, 60)}"` : ""} was ${proposal.status === "REJECTED" ? "rejected" : proposal.status === "FAILED" ? "approved but could not be applied" : "approved and applied"}${proposal.reviewer ? ` by ${proposal.reviewer}` : ""} · ${timeAgo(proposal.reviewedAt, now)}`,
-      urgent: proposal.status !== "APPLIED",
+      text: `${group.count === 1 ? "Your AI proposal was" : `${group.count} of your AI proposals were`} ${group.status === "REJECTED" ? "rejected" : group.status === "FAILED" ? "approved but could not be applied" : "approved and applied"}${group.reviewer ? ` by ${group.reviewer}` : ""} · ${timeAgo(group.latest, now)}`,
+      urgent: group.status !== "APPLIED",
     })),
   ].filter((item) => item !== null);
   const seenStores = new Set<string>();
