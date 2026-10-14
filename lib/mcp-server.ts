@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getRecord, recentChanges, schemaCatalog, schemaText, searchRecords } from "@/lib/knowledge";
+import { getRecord, readFile, recentChanges, schemaCatalog, schemaText, searchRecords } from "@/lib/knowledge";
 import type { AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createProposal } from "@/lib/proposals";
@@ -14,7 +14,15 @@ function text(body: string, isError = false) {
  * With canPropose, the assistant can also submit changes, which wait for human review.
  */
 export function createKnowledgeServer(access: AccessContext, options: { canPropose: boolean; tokenId: string | null }) {
-  const server = new McpServer({ name: "dimension-knowledge", version: "1.1.0" });
+  const server = new McpServer(
+    { name: "dimension-knowledge", version: "1.2.0" },
+    {
+      instructions:
+        "Records describe locations, vendors, and other subjects. Some attributes hold files such as policies, handbooks, contracts, and certificates; " +
+        "record cards list them as `name [file <id>]`. When a question depends on what a document says, call read_file with that id " +
+        "(use find to jump to the relevant passages) and answer from the document's text, naming the file. search_records also matches text inside files.",
+    },
+  );
   server.registerResource(
     "schema",
     "dimension://schema",
@@ -29,7 +37,7 @@ export function createKnowledgeServer(access: AccessContext, options: { canPropo
     "search_records",
     {
       title: "Search records",
-      description: "Find records by subject label, attribute display name, or display value. Returns knowledge cards and record ids. Optional record type, dimension, and attribute narrow the match.",
+      description: "Find records by subject label, attribute display name, display value, or text inside attached files. Returns knowledge cards and record ids; files are listed as `name [file <id>]`, with the matching passage when the match was inside a file. Optional record type, dimension, and attribute narrow the match.",
       inputSchema: {
         query: z.string().describe("Text to match."),
         type: z.string().optional().describe("Record type name, such as Location or Vendor."),
@@ -44,11 +52,28 @@ export function createKnowledgeServer(access: AccessContext, options: { canPropo
     "get_record",
     {
       title: "Get record",
-      description: "Return one record as a knowledge card grouped by dimension, followed by the records that link to it. Only attributes this user can view are included.",
+      description: "Return one record as a knowledge card grouped by dimension, followed by the records that link to it. Only attributes this user can view are included. Attached files are listed as `name [file <id>]`; read them with read_file.",
       inputSchema: { id: z.string().describe("Record id.") },
       annotations: { readOnlyHint: true },
     },
     async ({ id }) => text(await getRecord(access, id)),
+  );
+  server.registerTool(
+    "read_file",
+    {
+      title: "Read a file",
+      description:
+        "Read the text of a file attached to a record (PDF, Word, Excel, PowerPoint, text, or CSV), such as a policy, handbook, or contract. " +
+        "Use the id from a record card's `[file <id>]`. Use find to get the passages about a topic (for example \"notice period\" or \"final pay\"); " +
+        "otherwise the text is returned in parts of 40,000 characters, and offset continues where the previous part ended.",
+      inputSchema: {
+        file_id: z.string().describe("The file id from a record card."),
+        find: z.string().optional().describe("Words to look for. Returns the passages that mention them."),
+        offset: z.number().int().min(0).optional().describe("Character position to read from. Defaults to the start."),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ file_id, find, offset }) => text(await readFile(access, { fileId: file_id, find, offset })),
   );
   server.registerTool(
     "recent_changes",

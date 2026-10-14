@@ -504,6 +504,10 @@ model StoredFile {
   size         Int
   sha256       String
   data         Bytes
+  /// The file's readable text, for AI tools and search. Filled at upload, or on first read for older files.
+  text         String?
+  /// Why there is no text (an image, a scan without a text layer, an older Office format).
+  textError    String          @default("")
   uploadedById String?
   uploadedBy   User?           @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   createdAt    DateTime        @default(now())

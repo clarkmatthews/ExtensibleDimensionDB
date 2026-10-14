@@ -6,6 +6,7 @@ import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { createHash } from "node:crypto";
+import { extractFileText } from "@/lib/file-text";
 import { cleanFileName, extensionOf, FILE_TYPES, fileToken, MAX_UPLOAD_BYTES, parseFileTokens, uploadError } from "@/lib/files";
 import { canUpdateField, identifierTaken, loadSaveContext, saveRecord, storedInputs, type LoadedField } from "@/lib/record-save";
 import { resolveRecordType } from "@/lib/record-types";
@@ -128,6 +129,8 @@ async function storeUploads(formData: FormData, fields: LoadedField[], userId: s
         size: item.bytes.length,
         sha256: createHash("sha256").update(item.bytes).digest("hex"),
         data: item.bytes,
+        // Read once now, so AI tools and search can use the text right away.
+        ...(await extractFileText(item.name, item.bytes).then((result) => ("text" in result ? { text: result.text } : { textError: result.error }))),
         uploadedById: userId,
       },
       select: { id: true },

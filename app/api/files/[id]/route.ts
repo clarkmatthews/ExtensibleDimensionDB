@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseFileTokens, servingHeaders } from "@/lib/files";
-import { canSeeValue, canViewModule, loadAccess } from "@/lib/permissions";
+import { visibleFile } from "@/lib/file-access";
+import { servingHeaders } from "@/lib/files";
+import { canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
@@ -16,17 +17,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const access = await loadAccess(user);
   if (!canViewModule(access, "STORES")) return new NextResponse("Forbidden", { status: 403 });
   const { id } = await params;
-  const file = await prisma.storedFile.findUnique({
-    where: { id },
-    select: { id: true, name: true, size: true, data: true, fieldId: true, locationId: true, field: { select: { categoryId: true } } },
-  });
-  // Files not attached to a record, or that the person may not view, are reported as missing.
-  if (!file?.locationId || !canSeeValue(access, file.fieldId, file.field.categoryId)) return notFound();
-  const value = await prisma.fieldValue.findUnique({
-    where: { locationId_fieldId: { locationId: file.locationId, fieldId: file.fieldId } },
-    select: { valueText: true },
-  });
-  if (!parseFileTokens(value?.valueText).some((item) => item.id === file.id)) return notFound();
+  const visible = await visibleFile(access, id);
+  if (!visible) return notFound();
+  const file = await prisma.storedFile.findUnique({ where: { id }, select: { name: true, size: true, data: true } });
+  if (!file) return notFound();
   return new NextResponse(new Uint8Array(file.data), {
     headers: {
       ...servingHeaders(file.name, request.nextUrl.searchParams.get("download") === "1"),
