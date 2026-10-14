@@ -31,6 +31,7 @@ async function member() {
 export async function createAccessToken(formData: FormData) {
   return audited("ai.createToken", [formData], async () => {
     const { user, access } = await member();
+    if (!user.isAdmin) back(`error=${encodeURIComponent("Personal tokens are created by administrators. Connect a chat assistant instead.")}`);
     const name = String(formData.get("name") ?? "").trim().slice(0, 80);
     if (!name) back(`error=${encodeURIComponent("Name the token after the assistant or computer that will use it.")}`);
     const wantsPropose = accessChoice(formData.get("access")) === "propose";
