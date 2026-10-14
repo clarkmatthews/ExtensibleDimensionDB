@@ -162,6 +162,8 @@ model User {
   canDefineWorkflows Boolean        @default(false)
   /// Set when someone else chose this person's password; they choose their own at next sign-in.
   mustChangePassword Boolean        @default(false)
+  /// When this person last opened the dashboard, so it can mark what is new since then.
+  dashboardSeenAt    DateTime?
   createdAt          DateTime       @default(now())
   groups             UserGroup[]
   assignedTasks      Task[]         @relation("Assignee")
@@ -178,6 +180,7 @@ model User {
   oauthConnections   OauthConnection[]
   oauthCodes         OauthCode[]
   proposals          ChangeProposal[] @relation("Proposer")
+  recordWatches      RecordWatch[]
   reviews            ChangeProposal[] @relation("Reviewer")
 }
 
@@ -478,6 +481,19 @@ model Location {
   processes StoreProcess[]
   changes   FieldChange[]
   notifications Notification[]
+  watchers  RecordWatch[]
+}
+
+/// A person following a record: other people's edits to it appear on their dashboard.
+model RecordWatch {
+  userId     String
+  locationId String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, locationId])
+  @@index([locationId])
 }
 
 model FieldValue {

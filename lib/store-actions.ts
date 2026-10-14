@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
-import { canEditModule, loadAccess } from "@/lib/permissions";
+import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { identifierTaken, loadSaveContext, saveRecord, type LoadedField } from "@/lib/record-save";
 import { resolveRecordType } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
@@ -44,6 +44,14 @@ export async function saveStore(formData: FormData) {
   if (result.error !== undefined) return { error: result.error };
   const location = { id: result.locationId };
   const changes = result.changes;
+  // Saving a record from its form follows it, so other people's edits show on the dashboard.
+  if (result.created || changes.length) {
+    await prisma.recordWatch.upsert({
+      where: { userId_locationId: { userId: user.id, locationId: location.id } },
+      update: {},
+      create: { userId: user.id, locationId: location.id },
+    });
+  }
 
   await runWorkflows({
     locationId: location.id,
@@ -60,6 +68,23 @@ export async function saveStore(formData: FormData) {
   // Saving an existing record stays on that record.
   if (result.created) redirect(`/dimensions?type=${encodeURIComponent(recordTypeId)}&created=${encodeURIComponent(location.id)}`);
   redirect(`/dimensions/${location.id}`);
+}
+
+/** Follow or stop following a record. Anyone who can open the record can watch it. */
+export async function setRecordWatch(formData: FormData) {
+  const { user, access } = await actor();
+  const locationId = String(formData.get("locationId") ?? "");
+  if (!canViewModule(access, "STORES") || !(await prisma.location.findUnique({ where: { id: locationId }, select: { id: true } }))) {
+    redirect("/dimensions");
+  }
+  const key = { userId: user.id, locationId };
+  if (formData.get("watch") === "1") {
+    await prisma.recordWatch.upsert({ where: { userId_locationId: key }, update: {}, create: key });
+  } else {
+    await prisma.recordWatch.deleteMany({ where: key });
+  }
+  revalidatePath(`/dimensions/${locationId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function startWorkflow(formData: FormData) {

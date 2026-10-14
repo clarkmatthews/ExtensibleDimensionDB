@@ -9,7 +9,7 @@ import { linkedFrom, listRecordTypes, recordLabels, withLinkOptions } from "@/li
 import { getCurrentUser } from "@/lib/session";
 import { manualProcessesFor } from "@/lib/workflow";
 import { loadFieldChoices } from "@/lib/list-items";
-import { archiveRecord, restoreRecord, startWorkflow } from "@/lib/store-actions";
+import { archiveRecord, restoreRecord, setRecordWatch, startWorkflow } from "@/lib/store-actions";
 import { localDateInput, storedToInput } from "@/lib/values";
 
 export default async function StorePage({
@@ -123,7 +123,13 @@ export default async function StorePage({
     }),
     manualProcessesFor(location.recordTypeId),
   ]);
-  const [types, inbound] = await Promise.all([listRecordTypes(), linkedFrom(location.id)]);
+  const [types, inbound, watchers] = await Promise.all([
+    listRecordTypes(),
+    linkedFrom(location.id),
+    prisma.recordWatch.findMany({ where: { locationId: location.id }, select: { userId: true } }),
+  ]);
+  const watching = watchers.some((row) => row.userId === user.id);
+  const watcherCount = watchers.length;
   const recordType = types.find((type) => type.id === location.recordTypeId);
   const visibleInbound = inbound.filter((link) => canSeeValue(access, link.fieldId, link.categoryId));
   const visibleChanges = changes.filter((row) => canSeeValue(access, row.fieldId, row.field.categoryId));
@@ -139,10 +145,21 @@ export default async function StorePage({
       <Link className="inline-flex items-center gap-1 text-sm font-medium text-pine hover:underline" href={back.href}>
         <span aria-hidden="true">←</span> {back.label}
       </Link>
-      <h1 className="flex items-center text-2xl font-semibold">
-        {listName}
-        <HelpTip text="Edit the values for this record. An attribute's description appears beside it. Attributes you cannot update are read only. When you open this page from an action, the attributes that step requires are highlighted. Changelog lists saved edits for this record." />
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="flex items-center text-2xl font-semibold">
+          {listName}
+          <HelpTip text="Edit the values for this record. An attribute's description appears beside it. Attributes you cannot update are read only. When you open this page from an action, the attributes that step requires are highlighted. Changelog lists saved edits for this record." />
+        </h1>
+        <form action={setRecordWatch} className="flex items-center gap-2">
+          <input type="hidden" name="locationId" value={location.id} />
+          <input type="hidden" name="watch" value={watching ? "0" : "1"} />
+          <span className="text-sm text-muted">
+            {watcherCount === 0 ? "Nobody is watching" : watcherCount === 1 ? (watching ? "You are watching" : "1 person watching") : `${watcherCount} people watching`}
+          </span>
+          <button className="btn-quiet" type="submit" aria-pressed={watching}>{watching ? "Stop watching" : "Watch"}</button>
+          <HelpTip text="Other people's edits to records you watch appear on your dashboard. You start watching a record when you create or edit it." />
+        </form>
+      </div>
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {archived ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-warn">
