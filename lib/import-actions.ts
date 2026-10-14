@@ -8,6 +8,7 @@ import { MAX_IMPORT_BYTES, previewImport, rowsToApply, type ApplyResult, type Im
 import { canEditModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { loadSaveContext, saveRecord } from "@/lib/record-save";
+import { readImportFile, tableToCsv } from "@/lib/import-formats";
 import { rightsForType } from "@/lib/record-access";
 import { resolveRecordType } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
@@ -30,18 +31,21 @@ async function importer() {
 export async function uploadImport(formData: FormData) {
   const { user, access } = await importer();
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) redirect(`${PAGE}?error=${encodeURIComponent("Choose a CSV file.")}`);
+  if (!(file instanceof File) || file.size === 0) redirect(`${PAGE}?error=${encodeURIComponent("Choose a CSV, Excel, JSON, or XML file.")}`);
   if (file.size > MAX_IMPORT_BYTES) redirect(`${PAGE}?error=${encodeURIComponent("The file is larger than 5 MB.")}`);
   const recordType = (await resolveRecordType(String(formData.get("recordTypeId") ?? ""))).current;
   if (!recordType) redirect(`${PAGE}?error=${encodeURIComponent("Choose a record type.")}`);
   if (!(await rightsForType(access, recordType.id)).canAdd) redirect(`${PAGE}?error=${encodeURIComponent("You cannot add records of this type.")}`);
-  const csv = await file.text();
+  // Every format becomes the same table, stored as CSV, so preview and apply work the same way.
+  const read = await readImportFile(file.name, new Uint8Array(await file.arrayBuffer()));
+  if ("error" in read) redirect(`${PAGE}?error=${encodeURIComponent(read.error)}`);
+  const csv = tableToCsv(read.table);
   const summary = await previewImport(csv, await loadSaveContext(recordType.id), access);
   const job = await prisma.importJob.create({
     data: {
       userId: user.id,
       recordTypeId: recordType.id,
-      fileName: file.name.slice(0, 200),
+      fileName: `${file.name.slice(0, 160)}${read.format === "CSV" ? "" : ` (${read.format})`}${read.note ? ` · ${read.note}` : ""}`.slice(0, 200),
       csv,
       summary: summary as unknown as Prisma.InputJsonValue,
     },

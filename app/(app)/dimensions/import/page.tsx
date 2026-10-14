@@ -8,6 +8,7 @@ import { MAX_IMPORT_ROWS } from "@/lib/import";
 import { applyImport, uploadImport } from "@/lib/import-actions";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { ImportTypePicker } from "@/components/import-type-picker";
 import { recordTypeRights } from "@/lib/record-access";
 import { listRecordTypes } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
@@ -49,10 +50,12 @@ export default async function ImportPage({
         <Link className="text-sm font-semibold text-pine" href="/dimensions">Dimension</Link>
         <h1 className="mt-1 flex items-center text-2xl font-semibold">
           Import
-          <HelpTip text="Create and update records from a CSV file. Every row is checked with the same rules as the record form before anything is saved." />
+          <HelpTip text="Create and update records from a CSV, Excel, JSON, or XML file. Every row is checked with the same rules as the record form before anything is saved." />
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-muted">
-          The first row names the attributes, by key or display name. Export CSV produces a file in this format.
+          Upload a CSV, Excel (.xlsx), JSON, or XML file. Columns name the attributes, by key or display name: the first row of a CSV or the first sheet,
+          the keys of each object in a JSON list, or the child elements (or <code>&lt;value key=&quot;…&quot;&gt;</code> elements) of each repeated XML element.
+          Download a sample below for the exact layout. Export CSV and the share API&apos;s JSON and XML can be imported as they are.
           When the file has the unique identifier column, rows that match an existing record update it; other rows create records.
           Empty cells clear a value; leave a column out to keep its values. Up to {MAX_IMPORT_ROWS} rows and 5 MB per file.
         </p>
@@ -62,19 +65,10 @@ export default async function ImportPage({
 
       {canImport && (!mine || mine.status === "APPLIED") ? (
         <form action={uploadImport} className="panel flex flex-wrap items-end gap-3 p-4">
-          {types.length > 1 ? (
-            <label>
-              <span className="label">Record type</span>
-              <select className="field" name="recordTypeId" defaultValue={params.type ?? types[0]?.id}>
-                {types.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
-              </select>
-            </label>
-          ) : (
-            <input type="hidden" name="recordTypeId" value={types[0]?.id ?? ""} />
-          )}
+          <ImportTypePicker types={types.map((type) => ({ id: type.id, name: type.name }))} initial={params.type ?? ""} />
           <label>
-            <span className="label">CSV file</span>
-            <input className="field" type="file" name="file" accept=".csv,text/csv" required />
+            <span className="label">File: CSV, Excel, JSON, or XML</span>
+            <input className="field" type="file" name="file" accept=".csv,.xlsx,.json,.xml,text/csv,application/json,application/xml,text/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
           </label>
           <button className="btn" type="submit">Check file</button>
         </form>
