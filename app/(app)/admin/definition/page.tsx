@@ -271,6 +271,7 @@ export default async function DefinitionPage({
                 checkboxLabel: field.checkboxLabel,
                 minDate: field.minDate,
                 maxDate: field.maxDate,
+                fileTypes: field.fileTypes,
                 options: field.options.map((option) => ({
                   label: option.label,
                   value: option.value,

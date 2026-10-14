@@ -4,6 +4,7 @@ import { choicesForList } from "@/lib/list-items";
 import { categoryAccess, fieldAccess, type AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { withLinkOptions } from "@/lib/record-types";
+import { parseFileTokens } from "@/lib/files";
 import { validateValue, type Choice } from "@/lib/validators";
 import { defaultInput, displayRaw, displayStored, inputToStored, localDateInput, rulesFromField, type DefinedField } from "@/lib/values";
 import type { SavedChange } from "@/lib/workflow";
@@ -30,6 +31,11 @@ export type SaveContext = {
   fields: LoadedField[];
   listById: Map<string, { id: string; parentListId: string | null }>;
   optionCache: Map<string, Choice[]>;
+  /**
+   * Files uploaded on the record form for this save, by attribute. A file attribute's value can
+   * only list these and the files it already holds, so no other path can attach or copy a file.
+   */
+  uploads?: Map<string, string[]>;
 };
 
 export type PlannedWrite = { field: LoadedField; raw: string; options?: Choice[] };
@@ -134,6 +140,13 @@ export async function planSave(
         if (!known.has(id)) rules.options.push({ label: id, value: id });
       }
     }
+    if (field.dataType === "FILE") {
+      const allowed = new Set([...parseFileTokens(stored.get(field.id)), ...parseFileTokens((ctx.uploads?.get(field.id) ?? []).join("|"))].map((file) => file.id));
+      if (parseFileTokens(raw).some((file) => !allowed.has(file.id))) {
+        errors.push(`${field.friendlyName}: Files can only be added by uploading them on the record.`);
+        continue;
+      }
+    }
     const error = await validateValue(rules, raw);
     if (error) errors.push(`${field.friendlyName}: ${error}`);
     writes.push({ field, raw, options: rules.options });
@@ -234,6 +247,16 @@ export async function saveRecord(input: {
           oldValue,
           newValue,
         });
+      }
+      for (const write of pending.filter((item) => item.field.dataType === "FILE")) {
+        const before = parseFileTokens(previousValues.find((value) => value.fieldId === write.field.id)?.valueText).map((file) => file.id);
+        const after = parseFileTokens(write.raw).map((file) => file.id);
+        // New uploads join this record; files no longer listed are deleted.
+        if (after.length) {
+          await tx.storedFile.updateMany({ where: { id: { in: after }, fieldId: write.field.id, locationId: null }, data: { locationId: location.id } });
+        }
+        const removed = before.filter((id) => !after.includes(id));
+        if (removed.length) await tx.storedFile.deleteMany({ where: { id: { in: removed }, fieldId: write.field.id, locationId: location.id } });
       }
       return { locationId: location.id, created: !locationId, changes };
     });

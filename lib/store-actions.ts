@@ -5,7 +5,9 @@ import { redirect } from "next/navigation";
 import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
-import { identifierTaken, loadSaveContext, saveRecord, type LoadedField } from "@/lib/record-save";
+import { createHash } from "node:crypto";
+import { cleanFileName, extensionOf, FILE_TYPES, fileToken, MAX_UPLOAD_BYTES, parseFileTokens, uploadError } from "@/lib/files";
+import { canUpdateField, identifierTaken, loadSaveContext, saveRecord, storedInputs, type LoadedField } from "@/lib/record-save";
 import { resolveRecordType } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { enqueueRecordEvent } from "@/lib/webhooks";
@@ -30,18 +32,37 @@ export async function saveStore(formData: FormData) {
     const values = formData.getAll(`field:${field.id}`).map(String);
     return field.multiple ? values.filter(Boolean).join("|") : (values[0] ?? "");
   };
+  const ctx = await loadSaveContext(recordTypeId);
+  const stored = locationId ? await storedInputs(locationId) : new Map<string, string>();
+  const uploaded = await storeUploads(formData, ctx.fields.filter((field) => field.dataType === "FILE" && canUpdateField(access, field)), user.id);
+  if ("error" in uploaded) return { error: uploaded.error };
+  ctx.uploads = uploaded.tokens;
+  // A file attribute's new value: the files it holds minus those marked for removal, plus new
+  // uploads. A single-file attribute keeps only the newest upload.
+  const fileValue = (field: LoadedField) => {
+    if (formData.get(`files:${field.id}`) !== "1") return undefined;
+    const removed = new Set(formData.getAll(`remove:${field.id}`).map(String));
+    const kept = parseFileTokens(stored.get(field.id)).filter((file) => !removed.has(file.id)).map(fileToken);
+    const added = uploaded.tokens.get(field.id) ?? [];
+    return (field.multiple ? [...kept, ...added] : added.length ? added.slice(-1) : kept.slice(0, 1)).join("|");
+  };
   const result = await saveRecord({
-    ctx: await loadSaveContext(recordTypeId),
+    ctx,
     access,
     userId: user.id,
     locationId,
     // The form posts every attribute the person can update. A missing checkbox or an empty
     // multiple choice is absent from the post, which means "cleared".
-    values: (field) => submitted(field),
+    values: (field) => (field.dataType === "FILE" ? fileValue(field) : submitted(field)),
     // A parent the person cannot edit is not posted, so its stored value decides the choices.
-    parentValues: (field) => (formData.has(`field:${field.id}`) ? submitted(field) : undefined),
+    parentValues: (field) => (field.dataType === "FILE" ? fileValue(field) : formData.has(`field:${field.id}`) ? submitted(field) : undefined),
   });
-  if (result.error !== undefined) return { error: result.error };
+  if (result.error !== undefined) {
+    // Nothing was saved, so the uploads are not attached to anything.
+    const ids = [...uploaded.tokens.values()].flat().map((token) => parseFileTokens(token)[0].id);
+    if (ids.length) await prisma.storedFile.deleteMany({ where: { id: { in: ids }, locationId: null } });
+    return { error: result.error };
+  }
   const location = { id: result.locationId };
   const changes = result.changes;
 
@@ -77,6 +98,43 @@ export async function setRecordWatch(formData: FormData) {
   }
   revalidatePath(`/dimensions/${locationId}`);
   revalidatePath("/dashboard");
+}
+
+/**
+ * Stores the files posted for each file attribute this person can update. They are attached to
+ * the record when the save succeeds; on any problem nothing is kept.
+ */
+async function storeUploads(formData: FormData, fields: LoadedField[], userId: string): Promise<{ error: string } | { tokens: Map<string, string[]> }> {
+  const pending: { field: LoadedField; name: string; bytes: Uint8Array<ArrayBuffer> }[] = [];
+  let total = 0;
+  for (const field of fields) {
+    for (const entry of formData.getAll(`upload:${field.id}`)) {
+      if (typeof entry === "string" || entry.size === 0) continue;
+      total += entry.size;
+      if (total > MAX_UPLOAD_BYTES) return { error: `Upload at most ${MAX_UPLOAD_BYTES / 1024 / 1024} MB of files in one save.` };
+      const bytes = new Uint8Array(await entry.arrayBuffer());
+      const problem = uploadError(field, entry.name, bytes);
+      if (problem) return { error: problem };
+      pending.push({ field, name: cleanFileName(entry.name), bytes });
+    }
+  }
+  const tokens = new Map<string, string[]>();
+  for (const item of pending) {
+    const saved = await prisma.storedFile.create({
+      data: {
+        fieldId: item.field.id,
+        name: item.name,
+        contentType: FILE_TYPES[extensionOf(item.name)] ?? "application/octet-stream",
+        size: item.bytes.length,
+        sha256: createHash("sha256").update(item.bytes).digest("hex"),
+        data: item.bytes,
+        uploadedById: userId,
+      },
+      select: { id: true },
+    });
+    tokens.set(item.field.id, [...(tokens.get(item.field.id) ?? []), fileToken({ id: saved.id, name: item.name })]);
+  }
+  return { tokens };
 }
 
 export async function startWorkflow(formData: FormData) {

@@ -14,6 +14,7 @@ export const DATA_TYPES = [
   "PHONE",
   "COORDINATE",
   "RECORD_LINK",
+  "FILE",
 ] as const;
 
 export type DataTypeName = (typeof DATA_TYPES)[number];
@@ -34,6 +35,7 @@ export const TYPE_LABELS: Record<DataTypeName, string> = {
   PHONE: "Phone",
   COORDINATE: "Coordinate",
   RECORD_LINK: "Link to record",
+  FILE: "File",
 };
 
 /** Attribute types whose value is chosen from a set of options. */

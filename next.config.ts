@@ -20,8 +20,11 @@ const consentSecurityPolicy = policy(assistantFormTargets());
 
 const nextConfig: NextConfig = {
   experimental: {
-    // CSV import uploads files of up to 5 MB through a server action. Other actions stay small.
-    serverActions: { bodySizeLimit: "6mb" },
+    // The record form uploads file attributes (25 MB per save, lib/files.ts) and CSV import
+    // uploads files of up to 5 MB, both through server actions.
+    serverActions: { bodySizeLimit: "26mb" },
+    // proxy.ts runs on every request, and Next buffers at most this much of a body behind it.
+    proxyClientMaxBodySize: "26mb",
   },
   async rewrites() {
     return [
@@ -46,6 +49,12 @@ const nextConfig: NextConfig = {
         // Listed after the general rule so its policy replaces the general one on this page.
         source: "/oauth/consent",
         headers: [{ key: "Content-Security-Policy", value: consentSecurityPolicy }],
+      },
+      {
+        // Stored files run no script and load nothing else. Chrome shows a PDF through its built-in
+        // viewer only when the document's own object-src allows it.
+        source: "/api/files/:path*",
+        headers: [{ key: "Content-Security-Policy", value: "default-src 'none'; object-src 'self'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'" }],
       },
     ];
   },

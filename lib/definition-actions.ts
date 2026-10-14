@@ -1,5 +1,6 @@
 "use server";
 
+import { normalizeFileTypes } from "@/lib/files";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ChoiceSource, DataType, Prisma } from "@prisma/client";
@@ -252,12 +253,16 @@ export async function saveField(formData: FormData) {
       return { error: "Big text max length is required and must be from 1 to 6400." };
     }
 
+    const isFile = dataType === "FILE";
+    const fileTypes = isFile ? normalizeFileTypes(text(formData, "fileTypes")) : { value: "" };
+    if (fileTypes.error) return { error: fileTypes.error };
+
     const rules: FieldRules = {
       dataType,
       isRequired: formData.get("isRequired") === "on",
-      validationPattern: text(formData, "validationPattern"),
+      validationPattern: isFile ? "" : text(formData, "validationPattern"),
       useRegex: true,
-      formatExample: text(formData, "formatExample"),
+      formatExample: isFile ? "" : text(formData, "formatExample"),
       maxLength,
       minValue: optionalNumber(formData, "minValue"),
       maxValue: optionalNumber(formData, "maxValue"),
@@ -280,13 +285,13 @@ export async function saveField(formData: FormData) {
       categoryId,
       linkTypeId: linkTypeId || null,
       isRequired: rules.isRequired,
-      isStoreKey: formData.get("isStoreKey") === "on",
+      isStoreKey: !isFile && formData.get("isStoreKey") === "on",
       isActiveFilter: dataType === "CHECKBOX" && formData.get("isActiveFilter") === "on",
       isCreatedDate: dataType === "DATE" && formData.get("isCreatedDate") === "on",
       choiceSource,
       choiceListId: choiceList?.id ?? null,
       parentFieldId: requestedParent || null,
-      defaultValue: text(formData, "defaultValue"),
+      defaultValue: isFile ? "" : text(formData, "defaultValue"),
       formatExample: rules.formatExample,
       validationPattern: rules.validationPattern,
       useRegex: rules.useRegex,
@@ -296,7 +301,8 @@ export async function saveField(formData: FormData) {
       negativeOk: rules.negativeOk,
       decimalOk: rules.decimalOk,
       numVisible: optionalNumber(formData, "numVisible") ?? 1,
-      multiple: rules.multiple && (dataType === "DROPDOWN" || dataType === "RECORD_LINK"),
+      multiple: rules.multiple && (dataType === "DROPDOWN" || dataType === "RECORD_LINK" || isFile),
+      fileTypes: fileTypes.value,
       is24Hour: rules.is24Hour || dataType !== "TIME",
       checkboxLabel: text(formData, "checkboxLabel"),
       minDate: rules.minDate,

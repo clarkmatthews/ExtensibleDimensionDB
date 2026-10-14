@@ -97,6 +97,8 @@ export async function validateValue(rules: FieldRules, raw: string): Promise<str
   if (!value) {
     return rules.isRequired ? "This attribute is required." : null;
   }
+  // Files are checked when they are uploaded, and saveRecord checks which files a value may list.
+  if (rules.dataType === "FILE") return !rules.multiple && value.includes("|") ? "Attach one file." : null;
 
   const limit = lengthLimit(rules);
   if (limit && value.length > limit) {
