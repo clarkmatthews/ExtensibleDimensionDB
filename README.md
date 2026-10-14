@@ -237,7 +237,9 @@ Permissions are assigned to **groups**. A person gets the combined permissions o
 - **Screens**: None, View, or Edit for each screen.
 - **Dimensions**: data access for the entire dimension (None, View, or Edit, which also covers attributes added later) or for specific attributes, plus the admin rights to add, hide, or edit attributes, edit the dimension, and assign its permissions.
 
-A person in several groups gets the higher level and every right any of their groups gives. Someone who is not an administrator can change a dimension's permissions only if they have **Assign permissions** on it.
+A person in several groups gets the higher level and every right any of their groups gives.
+
+Record types follow attribute access. A person sees a record type (its tab, list, records, archived records, exports, and AI answers) only when they can view at least one of its attributes; otherwise it is hidden and its records cannot be opened. Creating records of a type needs Edit on the Dimension screen and update access to at least one of its attributes, and the same right archives and restores them. Someone who is not an administrator can change a dimension's permissions only if they have **Assign permissions** on it.
 
 ![Groups](docs/screenshots/access.png)
 

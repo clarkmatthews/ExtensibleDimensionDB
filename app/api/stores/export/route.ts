@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/session";
 import { filterRows, readColumnFilters, withActiveDefault } from "@/lib/column-filters";
 import { loadStoreRows, loadVisibleFields } from "@/lib/store-query";
 import { checkboxCheckedText } from "@/lib/values";
-import { resolveRecordType } from "@/lib/record-types";
+import { resolveVisibleRecordType } from "@/lib/record-access";
 
 function fileName(typeName: string) {
   return typeName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "records";
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   if (!user) return new NextResponse("Unauthorized", { status: 401 });
   const access = await loadAccess(user);
   if (!canViewModule(access, "STORES")) return new NextResponse("Forbidden", { status: 403 });
-  const { current } = await resolveRecordType(request.nextUrl.searchParams.get("type"));
+  const { current } = await resolveVisibleRecordType(access, request.nextUrl.searchParams.get("type"));
   if (!current) return new NextResponse("No record type", { status: 404 });
   const fields = await loadVisibleFields(access, current.id);
   const query = request.nextUrl.searchParams.get("q") ?? "";

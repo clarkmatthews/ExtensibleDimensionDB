@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
-import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
+import { canEditModule, loadAccess } from "@/lib/permissions";
 import { createHash } from "node:crypto";
 import { extractFileText } from "@/lib/file-text";
 import { cleanFileName, extensionOf, FILE_TYPES, fileToken, MAX_UPLOAD_BYTES, parseFileTokens, uploadError } from "@/lib/files";
 import { canUpdateField, identifierTaken, loadSaveContext, saveRecord, storedInputs, type LoadedField } from "@/lib/record-save";
+import { rightsForRecord, rightsForType } from "@/lib/record-access";
 import { resolveRecordType } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { enqueueRecordEvent } from "@/lib/webhooks";
@@ -29,6 +30,10 @@ export async function saveStore(formData: FormData) {
     ? (await prisma.location.findUnique({ where: { id: locationId }, select: { recordTypeId: true } }))?.recordTypeId
     : (await resolveRecordType(String(formData.get("recordTypeId") ?? ""))).current?.id;
   if (!recordTypeId) return { error: locationId ? "This record no longer exists." : "Choose a record type." };
+  const typeRights = await rightsForType(access, recordTypeId);
+  if (locationId ? !typeRights.canView : !typeRights.canAdd) {
+    return { error: locationId ? "You do not have access to this record." : "You cannot add records of this type." };
+  }
   const submitted = (field: LoadedField) => {
     const values = formData.getAll(`field:${field.id}`).map(String);
     return field.multiple ? values.filter(Boolean).join("|") : (values[0] ?? "");
@@ -88,9 +93,7 @@ export async function saveStore(formData: FormData) {
 export async function setRecordWatch(formData: FormData) {
   const { user, access } = await actor();
   const locationId = String(formData.get("locationId") ?? "");
-  if (!canViewModule(access, "STORES") || !(await prisma.location.findUnique({ where: { id: locationId }, select: { id: true } }))) {
-    redirect("/dimensions");
-  }
+  if (!(await rightsForRecord(access, locationId))?.canView) redirect("/dimensions");
   const key = { userId: user.id, locationId };
   if (formData.get("watch") === "1") {
     await prisma.recordWatch.upsert({ where: { userId_locationId: key }, update: {}, create: key });
@@ -145,6 +148,7 @@ export async function startWorkflow(formData: FormData) {
   if (!canEditModule(access, "STORES")) redirect("/dimensions?error=You%20cannot%20change%20dimensions.");
   const locationId = String(formData.get("locationId") ?? "");
   const processId = String(formData.get("processId") ?? "");
+  if (!(await rightsForRecord(access, locationId))?.canView) redirect("/dimensions");
   const target = await prisma.location.findUnique({ where: { id: locationId }, select: { isActive: true } });
   const error = !target?.isActive ? "Restore this record before starting a workflow." : await startManualProcess(locationId, processId, user.id);
   revalidatePath("/dashboard");
@@ -178,7 +182,9 @@ export async function archiveRecord(formData: FormData) {
   const locationId = String(formData.get("locationId") ?? "");
   return audited("records.archive", [formData], async () => {
     const { user, access } = await actor();
-    if (!canEditModule(access, "STORES")) redirect(`/dimensions/${locationId}?error=${encodeURIComponent("You cannot archive records.")}`);
+    if (!(await rightsForRecord(access, locationId))?.canAdd) {
+      redirect(`/dimensions/${locationId}?error=${encodeURIComponent("Archiving needs permission to add records of this type.")}`);
+    }
     await prisma.$transaction([
       prisma.location.update({
         where: { id: locationId },
@@ -201,7 +207,9 @@ export async function restoreRecord(formData: FormData) {
   const locationId = String(formData.get("locationId") ?? "");
   return audited("records.restore", [formData], async () => {
     const { user, access } = await actor();
-    if (!canEditModule(access, "STORES")) redirect(`/dimensions/${locationId}?error=${encodeURIComponent("You cannot restore records.")}`);
+    if (!(await rightsForRecord(access, locationId))?.canAdd) {
+      redirect(`/dimensions/${locationId}?error=${encodeURIComponent("Restoring needs permission to add records of this type.")}`);
+    }
     const location = await prisma.location.findUnique({ where: { id: locationId }, include: { values: true } });
     if (!location) redirect("/dimensions/archived");
     // A record archived long ago may share its identifier with one created since.

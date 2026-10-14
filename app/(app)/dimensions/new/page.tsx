@@ -6,7 +6,8 @@ import { ModuleDenied } from "@/components/module-denied";
 import { StoreForm, type EditorCategory } from "@/components/store-form";
 import { canEditModule, categoryAccess, fieldAccess, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { resolveRecordType, withLinkOptions } from "@/lib/record-types";
+import { resolveVisibleRecordType } from "@/lib/record-access";
+import { withLinkOptions } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { loadFieldChoices } from "@/lib/list-items";
 import { defaultInput, localDateInput } from "@/lib/values";
@@ -16,8 +17,10 @@ export default async function NewStorePage({ searchParams }: { searchParams: Pro
   if (!user) redirect("/login");
   const access = await loadAccess(user);
   if (!canEditModule(access, "STORES")) return <ModuleDenied />;
-  const { types, current } = await resolveRecordType((await searchParams).type);
-  if (!current) return <p className="text-sm text-muted">No record types are active.</p>;
+  const { types, current, rights } = await resolveVisibleRecordType(access, (await searchParams).type);
+  if (!current) return <p className="text-sm text-muted">You do not have access to any record types.</p>;
+  // Only someone who can fill in at least one attribute of this type can create its records.
+  if (!rights.canAdd) return <ModuleDenied />;
   const fields = await withLinkOptions(
     await prisma.fieldDefinition.findMany({
       where: { isActive: true, category: { isActive: true, recordTypeId: current.id } },
