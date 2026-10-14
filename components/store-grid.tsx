@@ -165,8 +165,7 @@ export function StoreGrid({
         ))}
         <button className="btn" type="submit">Search</button>
         <ExportDialog query={exportQuery} />
-        <a className="btn-quiet" href="/api/stores/export-md">Export MD</a>
-        <HelpTip text="Search matches any visible value. Export downloads the rows that match the search and the attribute filters, as CSV, Excel, JSON, or XML. Export MD downloads every record you can view, as knowledge cards, and ignores those filters." />
+        <HelpTip text="Search matches any visible value. Export downloads the rows that match the search and the attribute filters, as CSV, Excel, JSON, or XML. Its Markdown choice downloads every record you can view, as knowledge cards, and ignores those filters." />
       </form>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <label className="inline-flex items-center">

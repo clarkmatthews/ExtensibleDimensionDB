@@ -7,6 +7,11 @@ const FORMATS = [
   { id: "xlsx", label: "Excel", detail: "An .xlsx workbook with one sheet." },
   { id: "json", label: "JSON", detail: "A list of records keyed by attribute, for developers and APIs." },
   { id: "xml", label: "XML", detail: "One <record> per row, with a <value key> for each attribute." },
+  {
+    id: "md",
+    label: "Markdown",
+    detail: "Every record you can view, with the schema, as knowledge cards for an AI model. Ignores the search and filters.",
+  },
 ];
 
 /** Export asks which format, then downloads the rows that match the current search and filters. */
@@ -24,7 +29,8 @@ export function ExportDialog({ query }: { query: string }) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open]);
 
-  const href = (format: string) => `/api/stores/export?${new URLSearchParams([...new URLSearchParams(query), ["format", format]]).toString()}`;
+  const href = (format: string) =>
+    format === "md" ? "/api/stores/export-md" : `/api/stores/export?${new URLSearchParams([...new URLSearchParams(query), ["format", format]]).toString()}`;
 
   return (
     <>
@@ -35,7 +41,7 @@ export function ExportDialog({ query }: { query: string }) {
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 p-4" onClick={() => setOpen(false)}>
           <div className="panel w-full max-w-md p-4" role="dialog" aria-modal="true" aria-labelledby="export-title" onClick={(event) => event.stopPropagation()}>
             <h2 id="export-title" className="text-lg font-semibold">Export</h2>
-            <p className="mt-1 text-sm text-muted">Downloads the rows that match the current search and filters, with the attributes you can view.</p>
+            <p className="mt-1 text-sm text-muted">CSV, Excel, JSON, and XML download the rows that match the current search and filters, with the attributes you can view.</p>
             <div className="mt-3 space-y-2">
               {FORMATS.map((format, index) => (
                 <a
