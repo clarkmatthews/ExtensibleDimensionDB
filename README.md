@@ -138,7 +138,14 @@ Overdue actions are found every 15 minutes. An action assigned to a person alert
 
 ![An action sequence](docs/screenshots/workflow-open.png)
 
-The dashboard lists open actions assigned to you or to a group you belong to, then recent change notifications and notices from notify steps. Accept, complete, reject, comment, and reassign an action from its card. Opening an action goes to the record and highlights the attributes that step requires.
+The dashboard is each person's own view of what is happening:
+
+- **Your last 7 days**: edits, records touched, actions completed, overdue actions, and a 30-day sparkline of your edits.
+- **Needs your attention**: overdue actions and actions due in the next two days, AI proposals waiting for your review, your own proposals that were just approved or rejected, and watched records that changed since your last visit.
+- **Open actions** assigned to you or to a group you belong to. Accept, complete, reject, comment, and reassign an action from its card. Opening an action goes to the record and highlights the attributes that step requires.
+- **Changes to records you watch**: other people's edits in the last 14 days, grouped by record, with **New** on anything since your last visit. You watch a record when you create or edit it from its form, or with **Watch** at the top of the record. **Stop watching** removes it. Records you edit by import are not watched automatically.
+- **Your recent edits**: the records you edited in the last 14 days, with the attributes you changed, as a quick way back to your work.
+- **Notices** from notify steps and change notifications.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
