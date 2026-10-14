@@ -9,7 +9,8 @@ import { linkedFrom, listRecordTypes, recordLabels, withLinkOptions } from "@/li
 import { getCurrentUser } from "@/lib/session";
 import { manualProcessesFor } from "@/lib/workflow";
 import { loadFieldChoices } from "@/lib/list-items";
-import { archiveRecord, restoreRecord, setRecordWatch, startWorkflow } from "@/lib/store-actions";
+import { WatchToggle } from "@/components/watch-toggle";
+import { archiveRecord, restoreRecord, startWorkflow } from "@/lib/store-actions";
 import { localDateInput, storedToInput } from "@/lib/values";
 
 export default async function StorePage({
@@ -150,15 +151,7 @@ export default async function StorePage({
           {listName}
           <HelpTip text="Edit the values for this record. An attribute's description appears beside it. Attributes you cannot update are read only. When you open this page from an action, the attributes that step requires are highlighted. Changelog lists saved edits for this record." />
         </h1>
-        <form action={setRecordWatch} className="flex items-center gap-2">
-          <input type="hidden" name="locationId" value={location.id} />
-          <input type="hidden" name="watch" value={watching ? "0" : "1"} />
-          <span className="text-sm text-muted">
-            {watcherCount === 0 ? "Nobody is watching" : watcherCount === 1 ? (watching ? "You are watching" : "1 person watching") : `${watcherCount} people watching`}
-          </span>
-          <button className="btn-quiet" type="submit" aria-pressed={watching}>{watching ? "Stop watching" : "Watch"}</button>
-          <HelpTip text="Other people's edits to records you watch appear on your dashboard. You start watching a record when you create or edit it." />
-        </form>
+        <WatchToggle locationId={location.id} watching={watching} watcherCount={watcherCount} />
       </div>
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       {archived ? (

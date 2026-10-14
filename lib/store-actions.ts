@@ -44,14 +44,6 @@ export async function saveStore(formData: FormData) {
   if (result.error !== undefined) return { error: result.error };
   const location = { id: result.locationId };
   const changes = result.changes;
-  // Saving a record from its form follows it, so other people's edits show on the dashboard.
-  if (result.created || changes.length) {
-    await prisma.recordWatch.upsert({
-      where: { userId_locationId: { userId: user.id, locationId: location.id } },
-      update: {},
-      create: { userId: user.id, locationId: location.id },
-    });
-  }
 
   await runWorkflows({
     locationId: location.id,

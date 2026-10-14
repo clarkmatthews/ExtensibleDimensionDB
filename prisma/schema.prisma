@@ -484,7 +484,7 @@ model Location {
   watchers  RecordWatch[]
 }
 
-/// A person following a record: other people's edits to it appear on their dashboard.
+/// A person following a record by their own choice: other people's edits to it appear on their dashboard.
 model RecordWatch {
   userId     String
   locationId String
