@@ -89,7 +89,7 @@ The menu groups the screens into the main work area, Dimension Config, People Co
 
 ### The grid
 
-The Dimension page is the working grid, with a tab for each record type. Search, filter each attribute, choose which attributes are visible, and open a record. **New Record** starts a blank record of the type you are viewing. **Export** asks for a format (CSV, Excel, JSON, or XML) and downloads the rows that match the current search and filters. **Export MD** downloads every record you can view as Markdown knowledge cards, for use with an AI model.
+The Dimension page is the working grid, with a tab for each record type. Search, filter each attribute, choose which attributes are visible, and open a record. **New Record** starts a blank record of the type you are viewing. **Export** asks for a format (CSV, Excel, JSON, or XML) and downloads the rows that match the current search and filters. Its **Markdown** choice downloads every record you can view, with the schema, as knowledge cards for an AI model, and ignores the filters.
 
 ![Vendors, a second record type](docs/screenshots/dimensions-vendors.png)
 
@@ -193,7 +193,7 @@ Each person can change an assistant's access or disconnect it at any time, and a
 
 **Local and read-only.** `npm run mcp` runs the same read tools over stdio as the user named in `MCP_USER_EMAIL`, for a model on the same machine.
 
-For a one-off handoff without MCP, use **Export MD** on the grid.
+For a one-off handoff without MCP, use **Export** › **Markdown** on the grid.
 
 ## Sharing and integration
 
