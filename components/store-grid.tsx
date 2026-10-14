@@ -10,6 +10,7 @@ import {
   type ColumnDef,
   type VisibilityState,
 } from "@tanstack/react-table";
+import { ExportDialog } from "@/components/export-dialog";
 import { HelpTip } from "@/components/help-tip";
 import {
   ALL_FILTER,
@@ -163,9 +164,9 @@ export function StoreGrid({
           </span>
         ))}
         <button className="btn" type="submit">Search</button>
-        <a className="btn-quiet" href={`/api/stores/export${exportQuery ? `?${exportQuery}` : ""}`}>Export CSV</a>
+        <ExportDialog query={exportQuery} />
         <a className="btn-quiet" href="/api/stores/export-md">Export MD</a>
-        <HelpTip text="Search matches any visible value. Export CSV downloads the rows that match the search and the attribute filters. Export MD downloads every record you can view, as knowledge cards, and ignores those filters." />
+        <HelpTip text="Search matches any visible value. Export downloads the rows that match the search and the attribute filters, as CSV, Excel, JSON, or XML. Export MD downloads every record you can view, as knowledge cards, and ignores those filters." />
       </form>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <label className="inline-flex items-center">

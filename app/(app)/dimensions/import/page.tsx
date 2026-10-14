@@ -55,7 +55,7 @@ export default async function ImportPage({
         <p className="mt-1 max-w-3xl text-sm text-muted">
           Upload a CSV, Excel (.xlsx), JSON, or XML file. Columns name the attributes, by key or display name: the first row of a CSV or the first sheet,
           the keys of each object in a JSON list, or the child elements (or <code>&lt;value key=&quot;…&quot;&gt;</code> elements) of each repeated XML element.
-          Download a sample below for the exact layout. Export CSV and the share API&apos;s JSON and XML can be imported as they are.
+          Download a sample below for the exact layout. Files from Export, in any format, and the share API&apos;s JSON and XML can be imported as they are.
           When the file has the unique identifier column, rows that match an existing record update it; other rows create records.
           Empty cells clear a value; leave a column out to keep its values. Up to {MAX_IMPORT_ROWS} rows and 5 MB per file.
         </p>

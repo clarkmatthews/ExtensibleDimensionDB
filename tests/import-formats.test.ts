@@ -74,3 +74,14 @@ describe("Excel details", () => {
     expect(excelDate(0.75)).toBe("18:00");
   });
 });
+
+describe("export", () => {
+  it("guards formulas in CSV exports, and import removes the guard", async () => {
+    const { renderTable } = await import("@/lib/table-export");
+    const { unguardCell } = await import("@/lib/csv");
+    const csv = new TextDecoder().decode(renderTable([["Name"], ["=HYPERLINK(1)"]], "csv", "x", { guardFormulas: true }));
+    expect(csv).toContain(`"'=HYPERLINK(1)"`);
+    const back = await readImportFile("x.csv", strToU8(csv));
+    expect("table" in back && unguardCell(back.table[1][0])).toBe("=HYPERLINK(1)");
+  });
+});
