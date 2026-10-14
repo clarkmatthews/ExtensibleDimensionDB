@@ -89,7 +89,7 @@ The menu groups the screens into the main work area, Dimension Config, People Co
 
 ### The grid
 
-The Dimension page is the working grid, with a tab for each record type. Search, filter each attribute, choose which attributes are visible, and open a record. **New Record** starts a blank record of the type you are viewing. **Export CSV** downloads the rows that match the current search and filters. **Export MD** downloads every record you can view as Markdown knowledge cards, for use with an AI model.
+The Dimension page is the working grid, with a tab for each record type. Search, filter each attribute, choose which attributes are visible, and open a record. **New Record** starts a blank record of the type you are viewing. **Export** asks for a format (CSV, Excel, JSON, or XML) and downloads the rows that match the current search and filters. **Export MD** downloads every record you can view as Markdown knowledge cards, for use with an AI model.
 
 ![Vendors, a second record type](docs/screenshots/dimensions-vendors.png)
 
@@ -122,7 +122,7 @@ Each format is read into the same table:
 - **JSON:** a list of objects keyed by attribute, or an object holding such a list. A list in a value becomes a multiple choice.
 - **XML:** one repeated element per record, with a child element per attribute, or `<value key="…">` elements as the share API writes them.
 
-The share API's own JSON and XML can be imported as they are. Headers are attribute keys or display names, so a file from Export CSV can be edited and imported back, including choice labels, Yes and No, dates as MM/DD/YYYY, and linked records by their identifier. When the file has the unique identifier column, matching rows update existing records and the rest create new ones.
+The share API's own JSON and XML can be imported as they are. Headers are attribute keys or display names, so a file from Export can be edited and imported back, including choice labels, Yes and No, dates as MM/DD/YYYY, and linked records by their identifier. When the file has the unique identifier column, matching rows update existing records and the rest create new ones.
 
 Nothing is saved when you upload. Every row is first checked with the same rules as the record form, and the preview shows how many rows will be created, updated, or skipped, the reason for each error, and how each column was matched. Rows with errors are skipped when you confirm. Imported changes are written to the changelog and sent to webhooks; running workflows for them is optional, so a large import does not send a notification for every row.
 
