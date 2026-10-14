@@ -8,6 +8,7 @@ import { MAX_IMPORT_BYTES, previewImport, rowsToApply, type ApplyResult, type Im
 import { canEditModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { loadSaveContext, saveRecord } from "@/lib/record-save";
+import { rightsForType } from "@/lib/record-access";
 import { resolveRecordType } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { enqueueRecordEvent } from "@/lib/webhooks";
@@ -33,6 +34,7 @@ export async function uploadImport(formData: FormData) {
   if (file.size > MAX_IMPORT_BYTES) redirect(`${PAGE}?error=${encodeURIComponent("The file is larger than 5 MB.")}`);
   const recordType = (await resolveRecordType(String(formData.get("recordTypeId") ?? ""))).current;
   if (!recordType) redirect(`${PAGE}?error=${encodeURIComponent("Choose a record type.")}`);
+  if (!(await rightsForType(access, recordType.id)).canAdd) redirect(`${PAGE}?error=${encodeURIComponent("You cannot add records of this type.")}`);
   const csv = await file.text();
   const summary = await previewImport(csv, await loadSaveContext(recordType.id), access);
   const job = await prisma.importJob.create({
@@ -55,6 +57,7 @@ export async function applyImport(formData: FormData) {
     const runRecordWorkflows = formData.get("runWorkflows") === "on";
     const job = await prisma.importJob.findUnique({ where: { id: jobId } });
     if (!job || job.userId !== user.id) redirect(`${PAGE}?error=${encodeURIComponent("That import was not found. Upload the file again.")}`);
+    if (!(await rightsForType(access, job.recordTypeId)).canAdd) redirect(`${PAGE}?error=${encodeURIComponent("You cannot add records of this type.")}`);
     // Claim the job so a double click cannot apply it twice.
     const claimed = await prisma.importJob.updateMany({ where: { id: job.id, status: "PREVIEWED" }, data: { status: "APPLYING" } });
     if (claimed.count === 0) redirect(`${PAGE}?job=${job.id}`);

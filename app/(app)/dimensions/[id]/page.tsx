@@ -6,6 +6,7 @@ import { ModuleDenied } from "@/components/module-denied";
 import { StoreForm, type EditorCategory } from "@/components/store-form";
 import { canEditModule, canSeeValue, canViewModule, categoryAccess, fieldAccess, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { recordTypeRights } from "@/lib/record-access";
 import { linkedFrom, listRecordTypes, recordLabels, withLinkOptions } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { manualProcessesFor } from "@/lib/workflow";
@@ -29,6 +30,12 @@ export default async function StorePage({
   if (!location) notFound();
   const access = await loadAccess(user);
   if (!canViewModule(access, "STORES")) return <ModuleDenied />;
+  const typeRights = await recordTypeRights(access);
+  const ownType = typeRights.get(location.recordTypeId);
+  // A record whose type shows this person no attributes is not theirs to open.
+  if (!ownType?.canView) return <ModuleDenied />;
+  // Archiving and restoring need the same right as adding records of this type.
+  const canArchive = ownType.canAdd;
   const moduleEdit = canEditModule(access, "STORES");
   const archived = !location.isActive;
   const archivedBy = location.archivedById
@@ -126,13 +133,14 @@ export default async function StorePage({
     }),
     manualProcessesFor(location.recordTypeId),
   ]);
-  const [types, inbound, watchers] = await Promise.all([
+  const [allTypes, inbound, watchers] = await Promise.all([
     listRecordTypes(),
     linkedFrom(location.id),
     prisma.recordWatch.findMany({ where: { locationId: location.id }, select: { userId: true } }),
   ]);
   const watching = watchers.some((row) => row.userId === user.id);
   const watcherCount = watchers.length;
+  const types = allTypes.filter((type) => typeRights.get(type.id)?.canView);
   const recordType = types.find((type) => type.id === location.recordTypeId);
   const visibleInbound = inbound.filter((link) => canSeeValue(access, link.fieldId, link.categoryId));
   const visibleChanges = changes.filter((row) => canSeeValue(access, row.fieldId, row.field.categoryId));
@@ -161,7 +169,7 @@ export default async function StorePage({
           <span>
             Archived {location.archivedAt?.toLocaleString() ?? ""}{archivedBy ? ` by ${archivedBy}` : ""}. It is hidden from the grid, exports, the share API, and AI knowledge, and it cannot be edited.
           </span>
-          {moduleEdit ? (
+          {canArchive ? (
             <form action={restoreRecord}>
               <input type="hidden" name="locationId" value={location.id} />
               <button className="btn-quiet" type="submit">Restore</button>
@@ -170,7 +178,7 @@ export default async function StorePage({
         </div>
       ) : null}
       <StoreForm locationId={location.id} categories={[...categories.values()]} readOnly={!canUpdate || archived} />
-      {!archived && moduleEdit ? (
+      {!archived && canArchive ? (
         <form action={archiveRecord} className="flex items-center">
           <input type="hidden" name="locationId" value={location.id} />
           <button className="btn-quiet" type="submit">Archive record</button>

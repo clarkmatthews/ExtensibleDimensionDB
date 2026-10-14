@@ -8,6 +8,7 @@ import { MAX_IMPORT_ROWS } from "@/lib/import";
 import { applyImport, uploadImport } from "@/lib/import-actions";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { recordTypeRights } from "@/lib/record-access";
 import { listRecordTypes } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 
@@ -37,7 +38,9 @@ export default async function ImportPage({
   const job = params.job ? await prisma.importJob.findUnique({ where: { id: params.job } }) : null;
   const mine = job && job.userId === user.id ? job : null;
   const summary = mine?.summary as (ImportSummary & { result?: ApplyResult }) | null;
-  const types = await listRecordTypes();
+  // Importing creates records, so only the types this person can add records to.
+  const typeRights = await recordTypeRights(access);
+  const types = (await listRecordTypes()).filter((type) => typeRights.get(type.id)?.canAdd);
   const jobType = mine ? types.find((type) => type.id === mine.recordTypeId) : undefined;
 
   return (

@@ -213,7 +213,9 @@ async function cardsFor(fields: LoadedField[], requestedIds: string[]) {
       })
     ).map((row) => [row.id, row.recordType]),
   );
-  const locationIds = requestedIds.filter((id) => active.has(id));
+  // A record whose type has no attribute this person can view is not shown at all.
+  const visibleTypes = new Set(fields.map((field) => field.category.recordType.id));
+  const locationIds = requestedIds.filter((id) => active.has(id) && visibleTypes.has(active.get(id)!.id));
   if (!locationIds.length) return [];
   const values = await prisma.fieldValue.findMany({
     where: { locationId: { in: locationIds }, fieldId: { in: fields.map((field) => field.id) } },

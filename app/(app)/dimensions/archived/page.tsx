@@ -3,7 +3,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
-import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
+import { canViewModule, loadAccess } from "@/lib/permissions";
+import { recordTypeRights } from "@/lib/record-access";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { restoreRecord } from "@/lib/store-actions";
@@ -15,9 +16,11 @@ export default async function ArchivedRecordsPage() {
   if (!user) redirect("/login");
   const access = await loadAccess(user);
   if (!canViewModule(access, "STORES")) return <ModuleDenied />;
-  const canEdit = canEditModule(access, "STORES");
+  const typeRights = await recordTypeRights(access);
+  const visibleTypes = [...typeRights].filter(([, rights]) => rights.canView).map(([id]) => id);
   const records = await prisma.location.findMany({
-    where: { isActive: false },
+    // Only record types this person can see.
+    where: { isActive: false, recordTypeId: { in: visibleTypes } },
     orderBy: { archivedAt: "desc" },
     take: 500,
     include: {
@@ -53,7 +56,7 @@ export default async function ArchivedRecordsPage() {
                   {record.archivedById && archivers.get(record.archivedById) ? ` by ${archivers.get(record.archivedById)}` : ""}
                 </p>
               </div>
-              {canEdit ? (
+              {typeRights.get(record.recordTypeId)?.canAdd ? (
                 <form action={restoreRecord}>
                   <input type="hidden" name="locationId" value={record.id} />
                   <button className="btn-quiet" type="submit">Restore</button>

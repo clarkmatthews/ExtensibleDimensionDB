@@ -4,10 +4,10 @@ import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { StoreGrid } from "@/components/store-grid";
-import { canEditModule, canViewModule, fieldAccess, loadAccess } from "@/lib/permissions";
+import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/session";
 import { columnChoices, filterRows, readColumnFilters, withActiveDefault } from "@/lib/column-filters";
-import { resolveRecordType } from "@/lib/record-types";
+import { resolveVisibleRecordType } from "@/lib/record-access";
 import { loadStoreRows, loadVisibleFields } from "@/lib/store-query";
 import { checkboxCheckedText } from "@/lib/values";
 
@@ -25,10 +25,15 @@ export default async function StoresPage({
   const page = Math.max(1, Number((typeof params.page === "string" ? params.page : "") || "1") || 1);
   const access = await loadAccess(user);
   if (!canViewModule(access, "STORES")) return <ModuleDenied />;
-  const moduleEdit = canEditModule(access, "STORES");
-  const { types, current } = await resolveRecordType(typeof params.type === "string" ? params.type : "");
+  const { all, types, current, rights } = await resolveVisibleRecordType(access, typeof params.type === "string" ? params.type : "");
   if (!current) {
-    return <p className="text-sm text-muted">No record types are active. An administrator can add one on Data definition.</p>;
+    return (
+      <p className="text-sm text-muted">
+        {all.length
+          ? "You do not have access to any record types. An administrator can grant it on Groups."
+          : "No record types are active. An administrator can add one on Data definition."}
+      </p>
+    );
   }
   const fields = await loadVisibleFields(access, current.id);
   const activeField = fields.find((field) => field.isActiveFilter && field.dataType === "CHECKBOX");
@@ -45,7 +50,7 @@ export default async function StoresPage({
   const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const slice = rows.slice((page - 1) * pageSize, page * pageSize);
-  const canCreate = moduleEdit && (user.isAdmin || fields.some((field) => fieldAccess(access, field.id, field.categoryId).canUpdate));
+  const canCreate = rights.canAdd;
   // Set after a new record is saved, so the list can confirm it and link to it.
   const createdId = typeof params.created === "string" ? params.created : "";
   const createdShown = Boolean(createdId) && rows.some((row) => row.id === createdId);
