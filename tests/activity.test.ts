@@ -50,3 +50,18 @@ describe("daily counts and times", () => {
     expect(timeAgo(at(60 * 30), now)).toBe("yesterday");
   });
 });
+
+describe("reviews of your proposals", () => {
+  it("collapses a batch into one line per outcome and reviewer", async () => {
+    const { summarizeReviews } = await import("@/lib/activity");
+    const at = (minutes: number) => new Date(Date.UTC(2026, 9, 14, 12, minutes));
+    const groups = summarizeReviews([
+      ...[1, 2, 3, 4, 5].map((minute) => ({ status: "APPLIED", reviewer: "Administrator", reviewedAt: at(minute) })),
+      { status: "REJECTED", reviewer: "Administrator", reviewedAt: at(9) },
+    ]);
+    expect(groups).toEqual([
+      { status: "REJECTED", reviewer: "Administrator", count: 1, latest: at(9) },
+      { status: "APPLIED", reviewer: "Administrator", count: 5, latest: at(5) },
+    ]);
+  });
+});
