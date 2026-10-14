@@ -9,7 +9,7 @@ The structure is only the start. Built-in workflows turn data changes into work:
 The data is also built to be used outside the app:
 
 - **AI-ready by design.** Each person can connect Claude, Cursor, or any MCP-capable assistant with their own token, and the assistant sees only what that person is allowed to see. Attribute names and descriptions explain what each fact means, so the model gets context and not just raw values. Assistants can also propose changes, but nothing is saved until a person approves it, and approved changes land in the changelog like any other edit.
-- **Partner-ready integration.** Publish any slice of your data as a JSON or XML endpoint, push signed webhooks to other systems when records change, and bring data in with a CSV import that checks every row before anything is saved.
+- **Partner-ready integration.** Publish any slice of your data as a JSON or XML endpoint, push signed webhooks to other systems when records change, and bring data in from CSV, Excel, JSON, or XML with an import that checks every row before anything is saved.
 - **Domain-agnostic.** The same engine handles a location portfolio (the included sample data), a product catalog, or a vendor registry. Adding a new kind of record is a configuration change, not a code change.
 
 ![The record grid, with a tab for each record type](docs/screenshots/dimensions.png)
@@ -113,7 +113,16 @@ The linked record lists everything that points to it:
 
 ### Import
 
-**Import** creates and updates records from a CSV file. Choose the record type, then upload. Headers are attribute keys or display names, so a file from Export CSV can be edited and imported back, including choice labels, Yes and No, dates as MM/DD/YYYY, and linked records by their identifier. When the file has the unique identifier column, matching rows update existing records and the rest create new ones.
+**Import** creates and updates records from a CSV, Excel (.xlsx), JSON, or XML file. Choose the record type, then upload. Below the record type, **Sample** links download a CSV, Excel, JSON, or XML file for that type, with the columns you can import and an example row to replace.
+
+Each format is read into the same table:
+
+- **CSV:** the first row is the header.
+- **Excel:** the first sheet, with its first row as the header. Date cells become dates.
+- **JSON:** a list of objects keyed by attribute, or an object holding such a list. A list in a value becomes a multiple choice.
+- **XML:** one repeated element per record, with a child element per attribute, or `<value key="…">` elements as the share API writes them.
+
+The share API's own JSON and XML can be imported as they are. Headers are attribute keys or display names, so a file from Export CSV can be edited and imported back, including choice labels, Yes and No, dates as MM/DD/YYYY, and linked records by their identifier. When the file has the unique identifier column, matching rows update existing records and the rest create new ones.
 
 Nothing is saved when you upload. Every row is first checked with the same rules as the record form, and the preview shows how many rows will be created, updated, or skipped, the reason for each error, and how each column was matched. Rows with errors are skipped when you confirm. Imported changes are written to the changelog and sent to webhooks; running workflows for them is optional, so a large import does not send a notification for every row.
 
@@ -214,7 +223,7 @@ A **File** attribute holds uploaded documents, such as a supplier agreement or a
 - On a record, people with update rights add files with the picker and remove them with **Remove**. Files are saved, or discarded, together with the rest of the record. With a single-file attribute, a new upload replaces the old file.
 - Up to 10 MB per file and 25 MB per save. Each file's first bytes must match its extension, so a renamed executable or web page is refused.
 - PDFs and images open in the browser; other files download. A file is only served to someone who may view that attribute on that record, and removed files are deleted.
-- The grid, exports, changelog, notices, and AI tools show the file names, and AI assistants can read and search the files' text with `read_file`. CSV import skips file columns, and AI proposals cannot add files.
+- The grid, exports, changelog, notices, and AI tools show the file names, and AI assistants can read and search the files' text with `read_file`. Import skips file columns, and AI proposals cannot add files.
 
 A link attribute names the record type it points to and whether it holds several records:
 
