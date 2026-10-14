@@ -3,6 +3,8 @@ import type { AccessContext, AccessUser } from "@/lib/permissions";
 import { canSeeValue, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { linkedFrom, recordLabels } from "@/lib/record-types";
+import { catchUpFileText, fileText, visibleFile } from "@/lib/file-access";
+import { parseFileTokens } from "@/lib/files";
 import { checkboxCheckedText, displayStored, type DefinedField } from "@/lib/values";
 
 const SEARCH_LIMIT = 25;
@@ -159,6 +161,10 @@ async function labelsFor(fields: LoadedField[], values: FieldValue[]) {
 }
 
 function displayValue(field: LoadedField, value: FieldValue | undefined, labels: Map<string, Map<string, string>>) {
+  if (field.dataType === "FILE") {
+    // The id lets an assistant read the file with read_file.
+    return parseFileTokens(value?.valueText).map((file) => `${file.name} [file ${file.id}]`).join(", ");
+  }
   if (field.dataType === "RECORD_LINK") {
     const links = labels.get(LINK_LABELS) ?? new Map<string, string>();
     const options = (value?.valueText ?? "").split("|").filter(Boolean).map((id) => ({ label: links.get(id) ?? id, value: id }));
@@ -304,9 +310,82 @@ export async function searchRecords(
     distinct: ["locationId"],
     take: SEARCH_LIMIT,
   });
-  const cards = await cardsFor(allFields, matches.map((row) => row.locationId));
+  // Text inside files on attributes in scope, so a question about a policy finds the document.
+  const fileFieldIds = scoped.filter((field) => field.dataType === "FILE").map((field) => field.id);
+  const fileHits = fileFieldIds.length ? await searchFileText(fileFieldIds, query) : [];
+  const ids = [...new Set([...matches.map((row) => row.locationId), ...fileHits.map((hit) => hit.locationId)])].slice(0, SEARCH_LIMIT);
+  const cards = await cardsFor(allFields, ids);
   if (!cards.length) return "No records match.";
-  return cards.join("\n\n");
+  return cards
+    .map((card) => {
+      const recordId = card.split("\n")[0].slice("Record: ".length);
+      const hits = fileHits.filter((hit) => hit.locationId === recordId);
+      if (!hits.length) return card;
+      return `${card}\nMatched inside files:\n${hits.map((hit) => `- ${hit.name} [file ${hit.id}]: "...${hit.snippet}..."`).join("\n")}`;
+    })
+    .join("\n\n");
+}
+
+/** Files whose text contains the query, with a short passage around the first match. */
+async function searchFileText(fieldIds: string[], query: string) {
+  await catchUpFileText(fieldIds);
+  const rows = await prisma.$queryRaw<{ id: string; name: string; locationId: string; fieldId: string; snippet: string }[]>`
+    SELECT f.id, f.name, f."locationId", f."fieldId",
+           substring(f.text FROM greatest(1, strpos(lower(f.text), lower(${query})) - 160) FOR 400) AS snippet
+    FROM "StoredFile" f
+    JOIN "Location" l ON l.id = f."locationId" AND l."isActive"
+    JOIN "FieldValue" v ON v."locationId" = f."locationId" AND v."fieldId" = f."fieldId" AND v."valueText" LIKE '%' || f.id || '/%'
+    WHERE f."fieldId" = ANY(${fieldIds}) AND f.text ILIKE '%' || ${escapeLike(query)} || '%'
+    ORDER BY f."createdAt" DESC
+    LIMIT ${SEARCH_LIMIT}`;
+  return rows.map((row) => ({ ...row, snippet: row.snippet.replace(/\s+/g, " ").trim() }));
+}
+
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+/** Characters returned per read_file call: long documents are read in parts. */
+export const FILE_CHUNK = 40_000;
+
+/**
+ * The text of a file on a record this person can view. With find, the passages that mention it;
+ * otherwise the text from offset, one part at a time.
+ */
+export async function readFile(ctx: AccessContext, input: { fileId: string; offset?: number; find?: string }) {
+  const id = input.fileId.trim();
+  if (!id) return "file_id is required.";
+  const file = await visibleFile(ctx, id, { activeOnly: true });
+  if (!file) return "No file with that id is visible.";
+  const subject = (await subjectLabels([file.locationId])).get(file.locationId) ?? file.locationId;
+  const header = `File: ${file.name}\nOn record: ${subject} (record ${file.locationId}), attribute ${file.field.friendlyName}`;
+  const extracted = await fileText(file.id);
+  if ("error" in extracted) return `${header}\n${extracted.error}`;
+  const text = extracted.text;
+  const find = input.find?.trim();
+  if (find) {
+    const lower = text.toLowerCase();
+    const terms = [find.toLowerCase(), ...find.toLowerCase().split(/\s+/).filter((word) => word.length > 3)];
+    const term = terms.find((candidate) => lower.includes(candidate));
+    if (!term) return `${header}\nNo passage mentions "${find}". Read the file from offset 0 to see all of it (${text.length.toLocaleString("en-US")} characters).`;
+    const passages: string[] = [];
+    let at = lower.indexOf(term);
+    let last = -1;
+    while (at >= 0 && passages.length < 8) {
+      if (at > last) {
+        const start = Math.max(0, at - 1200);
+        const end = Math.min(text.length, at + term.length + 1800);
+        passages.push(`[offset ${start}]\n${text.slice(start, end)}`);
+        last = end;
+      }
+      at = lower.indexOf(term, at + term.length);
+    }
+    return `${header}\nPassages mentioning "${term}" (${passages.length} shown). Read more with offset.\n\n${passages.join("\n\n...\n\n")}`;
+  }
+  const offset = Math.max(0, Math.min(Math.floor(input.offset ?? 0), text.length));
+  const end = Math.min(text.length, offset + FILE_CHUNK);
+  const more = end < text.length ? ` Call read_file again with offset ${end} for the rest.` : " This is the end of the file.";
+  return `${header}\nCharacters ${offset.toLocaleString("en-US")} to ${end.toLocaleString("en-US")} of ${text.length.toLocaleString("en-US")}.${more}\n\n${text.slice(offset, end)}`;
 }
 
 export async function getRecord(ctx: AccessContext, id: string) {

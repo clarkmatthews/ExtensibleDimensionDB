@@ -140,13 +140,25 @@ Finds subjects. Arguments:
 - `dimension` (optional dimension name)
 - `attribute` (optional attribute key or display name)
 
-Returns matching knowledge cards and each record id. The search covers the subject label, display names, and display values the caller is allowed to view.
+Returns matching knowledge cards and each record id. The search covers the subject label, display names, display values, and the text inside files on File attributes the caller is allowed to view. When a match is inside a file, the card ends with "Matched inside files" and the passage around the match.
 
 ### Tool `get_record`
 
 One subject. Argument: `id` (record id).
 
-Returns the knowledge card grouped by dimension, limited to attributes the view-only user can see, followed by the records that link to it.
+Returns the knowledge card grouped by dimension, limited to attributes the view-only user can see, followed by the records that link to it. Files on File attributes are listed as `name [file <id>]`.
+
+### Tool `read_file`
+
+Reads a document attached to a record, such as a policy, handbook, contract, or certificate. Arguments:
+
+- `file_id` (required): the id from a card's `[file <id>]`
+- `find` (optional): words to look for; returns up to eight passages that mention them, each with its character offset
+- `offset` (optional): where to start reading; without `find`, text comes back in parts of 40,000 characters, and each part says the offset to continue from
+
+Text is read from PDF (when it has a text layer; a scan without one has no text), Word (.docx), Excel (.xlsx), PowerPoint (.pptx, including notes), text, and CSV files. It is extracted when the file is uploaded; files uploaded before this existed are read the first time they are needed. Older Office formats (.doc, .xls, .ppt) and images have no readable text. A file is readable only when the caller can view that attribute on that record, and archived records are excluded.
+
+The server's instructions tell the assistant to use `read_file` when a question depends on what a document says, and to name the file in its answer.
 
 ### Tool `recent_changes`
 

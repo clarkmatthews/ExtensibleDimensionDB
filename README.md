@@ -165,7 +165,7 @@ The action report reviews actions and their history. Filter by group, user, date
 
 ## AI access
 
-The database works as a knowledge source for AI assistants. The schema (record types, dimensions, attribute names, descriptions, and lists) tells a model what each fact means, and records are retrieved as short knowledge cards when a question needs them. The contract is an MCP server with a `schema` resource and `search_records`, `get_record`, and `recent_changes` tools, described in [docs/ai-knowledge.md](docs/ai-knowledge.md).
+The database works as a knowledge source for AI assistants. The schema (record types, dimensions, attribute names, descriptions, and lists) tells a model what each fact means, and records are retrieved as short knowledge cards when a question needs them. The contract is an MCP server with a `schema` resource and `search_records`, `get_record`, `read_file`, and `recent_changes` tools. Assistants can read and search the text of documents on File attributes (PDF, Word, Excel, PowerPoint, text, CSV), so a question about a policy is answered from the handbook itself, described in [docs/ai-knowledge.md](docs/ai-knowledge.md).
 
 **Per person.** The app serves MCP at `/api/mcp`, and an assistant answers only from what its person can view. **AI access** offers two ways to connect:
 
@@ -214,7 +214,7 @@ A **File** attribute holds uploaded documents, such as a supplier agreement or a
 - On a record, people with update rights add files with the picker and remove them with **Remove**. Files are saved, or discarded, together with the rest of the record. With a single-file attribute, a new upload replaces the old file.
 - Up to 10 MB per file and 25 MB per save. Each file's first bytes must match its extension, so a renamed executable or web page is refused.
 - PDFs and images open in the browser; other files download. A file is only served to someone who may view that attribute on that record, and removed files are deleted.
-- The grid, exports, changelog, notices, and AI tools show the file names. CSV import skips file columns, and AI proposals cannot add files.
+- The grid, exports, changelog, notices, and AI tools show the file names, and AI assistants can read and search the files' text with `read_file`. CSV import skips file columns, and AI proposals cannot add files.
 
 A link attribute names the record type it points to and whether it holds several records:
 
