@@ -202,13 +202,13 @@ export default async function DashboardPage({
           <section id="watched" className="space-y-2">
             <h2 className="flex items-center text-lg font-semibold">
               Changes to records you watch
-              <HelpTip text="Edits other people made in the last 14 days to records you watch. You watch a record when you create or edit it, or with Watch on the record. New marks edits since your last visit." />
+              <HelpTip text="Edits other people made in the last 14 days to records you watch. Watch a record with the eye at the top of the record. New marks edits since your last visit." />
             </h2>
             {activity.watched.length === 0 ? (
               <p className="text-sm text-muted">
                 {activity.watchingCount
                   ? `Nobody else has edited the ${activity.watchingCount === 1 ? "record" : `${activity.watchingCount} records`} you watch in the last 14 days.`
-                  : "You are not watching any records yet. Open a record and choose Watch, or edit one."}
+                  : "You are not watching any records yet. Open a record and click the eye at the top to watch it."}
               </p>
             ) : null}
             {activity.watched.map((record) => <RecordCard key={record.locationId} record={record} now={now} showEdits />)}
