@@ -15,7 +15,7 @@ export const MAX_IMPORT_ROWS = 2000;
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 const MAX_REPORTED_ERRORS = 200;
 
-export type ColumnStatus = "matched" | "identifier" | "unknown" | "ambiguous" | "read-only" | "automatic";
+export type ColumnStatus = "matched" | "identifier" | "unknown" | "ambiguous" | "read-only" | "automatic" | "file";
 
 export type ImportColumn = { index: number; header: string; status: ColumnStatus; fieldId?: string; field?: string };
 
@@ -57,6 +57,7 @@ export function matchColumns(headers: string[], fields: LoadedField[], access: A
     const field = candidates[0];
     const base = { index, header, fieldId: field.id, field: `${field.category.name}: ${field.friendlyName}` };
     if (field.isCreatedDate) return { ...base, status: "automatic" as const };
+    if (field.dataType === "FILE") return { ...base, status: "file" as const };
     if (!canUpdateField(access, field)) return { ...base, status: field.isStoreKey ? ("identifier" as const) : ("read-only" as const) };
     return { ...base, status: field.isStoreKey ? ("identifier" as const) : ("matched" as const) };
   });

@@ -48,6 +48,7 @@ export type FieldDraft = {
   checkboxLabel: string;
   minDate: string;
   maxDate: string;
+  fileTypes: string;
   options: ListItem[];
 };
 
@@ -76,6 +77,7 @@ const empty = (): FieldDraft => ({
   decimalOk: false,
   numVisible: "1",
   multiple: false,
+  fileTypes: "",
   is24Hour: true,
   checkboxLabel: "",
   minDate: "",
@@ -147,6 +149,7 @@ export function FieldForm({
 
   const showLength = draft.dataType === "TEXT" || draft.dataType === "BIG_TEXT" || draft.dataType === "ADDRESS";
   const showNumeric = draft.dataType === "NUMERIC";
+  const isFile = draft.dataType === "FILE";
   const selectedCatalog = catalogs.find((catalog) => catalog.id === draft.choiceListId);
 
   return (
@@ -182,7 +185,7 @@ export function FieldForm({
             <span className="mt-1 block text-xs text-muted">Shown as help beside the attribute in the dimension editor.</span>
           </label>
           <label>
-            <span className="label">Type <HelpTip text="What the attribute accepts: text, a long note, a number, a date or time, a checkbox, a radio list, a dropdown list, or a link to another record." /></span>
+            <span className="label">Type <HelpTip text="What the attribute accepts: text, a long note, a number, a date or time, a checkbox, a radio list, a dropdown list, a link to another record, or uploaded files." /></span>
             <select
               className="field"
               value={draft.dataType}
@@ -202,6 +205,23 @@ export function FieldForm({
               ))}
             </select>
           </label>
+          {isFile ? (
+            <>
+              <label>
+                <span className="label">
+                  Accepted file types <HelpTip text="Extensions separated by commas, such as .pdf, .docx. Leave blank to accept PDF, Word, Excel, PowerPoint, text, CSV, PNG, and JPEG files." />
+                </span>
+                <input className="field" name="fileTypes" placeholder=".pdf, .docx" value={draft.fileTypes} onChange={(event) => patch({ fileTypes: event.target.value })} />
+                <span className="mt-1 block text-xs text-muted">Up to 10 MB per file. Files are stored in the database with the record.</span>
+              </label>
+              <label className="flex items-center gap-2 self-start pt-7 text-sm">
+                <input type="checkbox" checked={draft.multiple} onChange={(event) => patch({ multiple: event.target.checked })} />
+                Several files
+                <HelpTip text="Off: the attribute holds one file, and uploading another replaces it. On: people can add as many files as they need." />
+              </label>
+            </>
+          ) : null}
+          {isFile ? null : <>
           <label>
             <span className="label">Default value <HelpTip text="The value a new dimension starts with. After you change it on an existing attribute, you can apply it to selected dimensions." /></span>
             <input
@@ -227,16 +247,19 @@ export function FieldForm({
             <span className="label">Validation pattern <HelpTip text="A regular expression. Leave it blank when the attribute type is enough. Saving checks that the format example matches this pattern." /></span>
             <input className="field font-mono" name="validationPattern" value={draft.validationPattern} onChange={(event) => patch({ validationPattern: event.target.value })} />
           </label>
+          </>}
           <label className="flex items-center gap-2 text-sm">
             <input name="isRequired" type="checkbox" checked={draft.isRequired} onChange={(event) => patch({ isRequired: event.target.checked })} />
             Required
             <HelpTip text="The dimension cannot be saved while this attribute is empty." />
           </label>
+          {isFile ? null : (
           <label className="flex items-center gap-2 text-sm">
             <input name="isStoreKey" type="checkbox" checked={draft.isStoreKey} onChange={(event) => patch({ isStoreKey: event.target.checked })} />
             Unique dimension identifier
             <HelpTip text="This value identifies the dimension in action reports. Two dimensions should not share it." />
           </label>
+          )}
           {showLength ? (
             <label>
               <span className="label">Max length</span>

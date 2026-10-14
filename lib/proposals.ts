@@ -98,6 +98,10 @@ export async function createProposal(input: ProposalInput): Promise<{ ok: boolea
       errors.push(`${field.friendlyName}: this account cannot update it.`);
       continue;
     }
+    if (field.dataType === "FILE") {
+      errors.push(`${field.friendlyName}: files are uploaded by a person on the record, not proposed.`);
+      continue;
+    }
     const parent = field.parentFieldId ? ctx.fields.find((item) => item.id === field.parentFieldId) : undefined;
     const parentRaw = parent ? (inputs.get(parent.id) ?? stored.get(parent.id) ?? "") : "";
     inputs.set(field.id, normalizeCell(field, String(value ?? ""), await choicesFor(ctx, field, parentRaw)));

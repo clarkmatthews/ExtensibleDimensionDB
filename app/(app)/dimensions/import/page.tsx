@@ -20,6 +20,7 @@ const COLUMN_TEXT: Record<ColumnStatus, string> = {
   ambiguous: "Matches several attributes; use the attribute key; ignored",
   "read-only": "You cannot update this attribute; ignored",
   automatic: "Filled in automatically; ignored",
+  file: "Files are uploaded on the record; ignored",
 };
 
 export default async function ImportPage({

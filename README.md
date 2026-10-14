@@ -208,6 +208,14 @@ Record types are managed at the top of the page: add a type, rename it, or hide 
 
 ![A dimension opened](docs/screenshots/data-definition-open.png)
 
+A **File** attribute holds uploaded documents, such as a supplier agreement or a food safety certificate, stored in PostgreSQL with the record:
+
+- Choose the accepted types (PDF, Word, Excel, PowerPoint, text, CSV, PNG, JPEG; all of them when left blank) and whether it holds one file or several.
+- On a record, people with update rights add files with the picker and remove them with **Remove**. Files are saved, or discarded, together with the rest of the record. With a single-file attribute, a new upload replaces the old file.
+- Up to 10 MB per file and 25 MB per save. Each file's first bytes must match its extension, so a renamed executable or web page is refused.
+- PDFs and images open in the browser; other files download. A file is only served to someone who may view that attribute on that record, and removed files are deleted.
+- The grid, exports, changelog, notices, and AI tools show the file names. CSV import skips file columns, and AI proposals cannot add files.
+
 A link attribute names the record type it points to and whether it holds several records:
 
 ![A link attribute](docs/screenshots/data-definition-link.png)

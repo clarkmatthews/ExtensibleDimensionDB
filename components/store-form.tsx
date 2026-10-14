@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { saveStore } from "@/lib/store-actions";
+import { formatBytes, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, parseFileTokens } from "@/lib/files";
 import { choicesForParent, type ListChoice } from "@/lib/list-correlation";
 
 export type EditorField = {
@@ -22,6 +23,8 @@ export type EditorField = {
   parentFieldId: string;
   options: ListChoice[];
   highlighted: boolean;
+  /** File attributes: the accepted extensions, such as ".pdf,.docx". */
+  accept?: string;
 };
 
 export type EditorCategory = {
@@ -119,6 +122,14 @@ export function StoreForm({
   }
 
   async function onSubmit(formData: FormData) {
+    // Size limits are checked here first, so a large file fails quickly instead of after uploading.
+    const files = [...formData.entries()].filter(([key, value]) => key.startsWith("upload:") && typeof value !== "string").map(([, value]) => value as File);
+    const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES);
+    if (tooLarge) return setError(`${tooLarge.name} is ${formatBytes(tooLarge.size)}. Files can be at most ${formatBytes(MAX_FILE_BYTES)}.`);
+    if (files.reduce((sum, file) => sum + file.size, 0) > MAX_UPLOAD_BYTES) {
+      return setError(`Upload at most ${formatBytes(MAX_UPLOAD_BYTES)} of files in one save.`);
+    }
+    setError("");
     const result = await saveStore(formData);
     if (result?.error) setError(result.error);
   }
@@ -133,7 +144,16 @@ export function StoreForm({
           <h2 className="text-lg font-semibold">{category.name}</h2>
           {category.description ? <p className="text-sm text-muted">{category.description}</p> : null}
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {category.fields.map((field) => (
+            {category.fields.map((field) => field.dataType === "FILE" ? (
+              <div key={field.id} className={field.highlighted ? "rounded-md bg-amber-50 p-2" : ""}>
+                <span className="label" title={field.description}>
+                  {field.friendlyName}
+                  {field.isRequired ? " *" : ""}
+                </span>
+                <FileControl field={field} disabled={readOnly || !field.canUpdate} />
+                {field.description ? <span className="mt-1 block text-xs text-muted">{field.description}</span> : null}
+              </div>
+            ) : (
               <label key={field.id} className={field.highlighted ? "rounded-md bg-amber-50 p-2" : ""}>
                 <span className="label" title={field.description}>
                   {field.friendlyName}
@@ -245,4 +265,54 @@ function FieldControl({
   }
   const type = field.dataType === "DATE" ? "date" : field.dataType === "DATETIME" ? "datetime-local" : field.dataType === "TIME" ? "text" : field.dataType === "NUMERIC" ? "text" : "text";
   return <input className="field" type={type} name={name} defaultValue={field.value} disabled={disabled} onFocus={onFocus} />;
+}
+
+/** The files an attribute holds, each a link, with Remove boxes and a picker for new files. */
+function FileControl({ field, disabled }: { field: EditorField; disabled: boolean }) {
+  const files = parseFileTokens(field.value);
+  return (
+    <div className="space-y-2 text-sm">
+      {files.length ? (
+        <ul className="space-y-1">
+          {files.map((file) => (
+            <li key={file.id} className="flex flex-wrap items-center gap-3 rounded-md border border-line px-3 py-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0 text-muted">
+                <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z" />
+                <path d="M14 3v5h5" />
+              </svg>
+              <a className="min-w-0 flex-1 truncate font-medium text-pine hover:underline" href={`/api/files/${file.id}`} target="_blank" rel="noopener">
+                {file.name}
+              </a>
+              <a className="text-xs text-muted hover:text-ink" href={`/api/files/${file.id}?download=1`}>Download</a>
+              {disabled ? null : (
+                <label className="flex items-center gap-1 text-xs text-muted">
+                  <input type="checkbox" name={`remove:${field.id}`} value={file.id} />
+                  Remove
+                </label>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted">No file yet.</p>
+      )}
+      {disabled ? null : (
+        <>
+          <input type="hidden" name={`files:${field.id}`} value="1" />
+          <input
+            className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-line file:bg-card file:px-3 file:py-1.5 file:text-sm file:font-medium"
+            type="file"
+            name={`upload:${field.id}`}
+            accept={field.accept}
+            multiple={field.multiple}
+            aria-label={`Add ${field.multiple ? "files" : "a file"} to ${field.friendlyName}`}
+          />
+          <span className="block text-xs text-muted">
+            {field.multiple ? "Add one or more files." : files.length ? "Choosing a file replaces the current one." : "Choose a file."} Up to {formatBytes(MAX_FILE_BYTES)} each
+            {field.accept ? `: ${field.accept.split(",").join(", ")}` : ""}. Files are saved when you save the record.
+          </span>
+        </>
+      )}
+    </div>
+  );
 }

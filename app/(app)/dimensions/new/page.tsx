@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { acceptedTypes } from "@/lib/files";
 import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
@@ -53,6 +54,7 @@ export default async function NewStorePage({ searchParams }: { searchParams: Pro
       canUpdate: rights.canUpdate && !field.isCreatedDate,
       isRequired: field.isRequired,
       checkboxLabel: field.checkboxLabel,
+      accept: field.dataType === "FILE" ? acceptedTypes(field).join(",") : undefined,
       multiple: field.multiple,
       numVisible: field.numVisible,
       value: field.isCreatedDate ? localDateInput() : defaultInput(field),
