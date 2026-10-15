@@ -51,10 +51,12 @@ export function StoreGrid({
 }) {
   const router = useRouter();
   const [visibility, setVisibility] = useState<VisibilityState>({});
-  const [category, setCategory] = useState("all");
+  const [chosenCategory, setCategory] = useState("all");
   const [texts, setTexts] = useState<Record<string, string>>(() => textsFromFilters(fields, filters));
   const sentTexts = useRef(textsFromFilters(fields, filters));
   const categories = [...new Set(fields.map((field) => field.category))];
+  // A dimension chosen on another record type's tab does not exist here, so it means All.
+  const category = categories.includes(chosenCategory) ? chosenCategory : "all";
   const filtering =
     Boolean(query.trim()) ||
     Object.values(filters).some((filter) => filter.text.trim() || (filter.value && filter.value !== ALL_FILTER));

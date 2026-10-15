@@ -99,6 +99,8 @@ export default async function StoresPage({
         </nav>
       ) : null}
       <StoreGrid
+        // Each record type gets its own grid, so its dimension filter and hidden columns start fresh.
+        key={current.id}
         recordTypeId={types.length > 1 ? current.id : undefined}
         query={query}
         page={Math.min(page, pageCount)}
