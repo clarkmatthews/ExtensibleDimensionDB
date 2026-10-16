@@ -5,7 +5,7 @@ import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { loadDashboardActivity, timeAgo, type RecordActivity } from "@/lib/activity";
 import { canEditModule, canSeeValue, canViewModule, firstModuleHref, loadAccess } from "@/lib/permissions";
-import { filterVisibleIds, locationConstraint } from "@/lib/row-scope";
+import { locationConstraint, noticeConstraint, usersWhoCanSee } from "@/lib/row-scope";
 import { taskAction } from "@/lib/store-actions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -35,23 +35,17 @@ export default async function DashboardPage({
   const canEdit = canEditModule(access, "INBOX");
   const params = await searchParams;
   const scope = await locationConstraint(access);
-  const recentAll = await prisma.notification.findMany({
-    // Change notices, and notices about a record (a notify step, a record created).
-    where: { userId: user.id, OR: [{ fieldChangeId: { not: null } }, { locationId: { not: null } }] },
+  const hiddenNotices = await noticeConstraint(access);
+  const recent = await prisma.notification.findMany({
+    // Change notices, and notices about a record (a notify step, a record created), within scope.
+    where: {
+      userId: user.id,
+      AND: [{ OR: [{ fieldChangeId: { not: null } }, { locationId: { not: null } }] }, ...(hiddenNotices ? [hiddenNotices] : [])],
+    },
     include: { fieldChange: { include: { field: true, user: true } } },
     orderBy: { createdAt: "desc" },
-    take: 40,
+    take: 12,
   });
-  const recentIds = await filterVisibleIds(
-    access,
-    recentAll.flatMap((notice) => [notice.locationId, notice.fieldChange?.locationId].filter((id): id is string => Boolean(id))),
-  );
-  const recent = recentAll
-    .filter((notice) => {
-      const id = notice.locationId ?? notice.fieldChange?.locationId;
-      return !id || recentIds.has(id);
-    })
-    .slice(0, 12);
   await prisma.notification.updateMany({
     where: { userId: user.id, readAt: null },
     data: { readAt: new Date() },
@@ -111,6 +105,12 @@ export default async function DashboardPage({
     seenStores.add(task.locationId);
     return true;
   });
+  // Only members who can see the record can be given its action.
+  const assignable = new Map(
+    await Promise.all(
+      visible.map(async (task) => [task.id, new Set(await usersWhoCanSee(task.assigneeGroup.members.map((member) => member.userId), task.locationId))] as const),
+    ),
+  );
 
   return (
     <div className="space-y-4">
@@ -195,7 +195,7 @@ export default async function DashboardPage({
                 <label className="block text-sm">
                   <span className="label">Assign in group <HelpTip text="Give this action to one member of the assigned group. That person is notified." /></span>
                   <select className="field" name="assigneeUserId">
-                    {task.assigneeGroup.members.map((member) => (
+                    {task.assigneeGroup.members.filter((member) => assignable.get(task.id)?.has(member.userId)).map((member) => (
                       <option key={member.userId} value={member.userId}>{member.user.name}</option>
                     ))}
                   </select>

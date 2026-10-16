@@ -2,7 +2,7 @@ import type { StepKind, TaskPriority } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { groupMemberIds, notifyUsers, watcherIds } from "@/lib/notify";
 import { canSeeValue, loadAccess, loadAccessForUsers } from "@/lib/permissions";
-import { locationVisible } from "@/lib/row-scope";
+import { locationVisible, usersWhoCanSee } from "@/lib/row-scope";
 import { triggerMatches } from "@/lib/workflow-rules";
 
 const PRIORITY_UP: Record<TaskPriority, TaskPriority> = {
@@ -256,13 +256,18 @@ export async function startManualProcess(locationId: string, processId: string, 
   return startTaskProcess(process, locationId, userId);
 }
 
-async function activeStepAssignee(stepId: string, groupId: string) {
+/**
+ * The step's named person, when they are still in the group and can see the record. Otherwise
+ * the action goes to the group, so it does not sit with someone who cannot open it.
+ */
+async function activeStepAssignee(stepId: string, groupId: string, locationId: string) {
   const step = await prisma.workflowStep.findUnique({ where: { id: stepId } });
   if (!step?.assigneeUserId) return null;
   const member = await prisma.userGroup.findFirst({
     where: { userId: step.assigneeUserId, groupId, user: { isActive: true } },
   });
-  return member ? step.assigneeUserId : null;
+  if (!member) return null;
+  return (await usersWhoCanSee([step.assigneeUserId], locationId)).length ? step.assigneeUserId : null;
 }
 
 async function openStep(input: {
@@ -277,7 +282,7 @@ async function openStep(input: {
   comment: string;
   fieldChangeId?: string;
 }) {
-  const assigneeUserId = await activeStepAssignee(input.stepId, input.groupId);
+  const assigneeUserId = await activeStepAssignee(input.stepId, input.groupId, input.locationId);
   const task = await prisma.task.create({
     data: {
       storeProcessId: input.runId,
@@ -365,6 +370,7 @@ export async function applyTaskAction(input: {
       where: { userId_groupId: { userId: input.assigneeUserId, groupId: task.assigneeGroupId } },
     });
     if (!member) return "That person is not in the assigned group.";
+    if (!(await usersWhoCanSee([input.assigneeUserId], task.locationId)).length) return "That person cannot see this record, so the action cannot be assigned to them.";
     await prisma.task.update({
       where: { id: task.id },
       data: { assigneeUserId: input.assigneeUserId },

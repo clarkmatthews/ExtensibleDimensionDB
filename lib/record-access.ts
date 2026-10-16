@@ -1,7 +1,7 @@
 import { canEditModule, canSeeValue, canViewModule, fieldAccess, type AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { listRecordTypes } from "@/lib/record-types";
-import { locationVisible } from "@/lib/row-scope";
+import { creatableFieldIds, locationVisible } from "@/lib/row-scope";
 
 /**
  * What a person can do with the records of one type.
@@ -9,10 +9,13 @@ import { locationVisible } from "@/lib/row-scope";
  *   records are hidden, so nobody opens a record that shows nothing.
  * - canAdd: they can create records of it, which needs edit access to Dimension and update access to
  *   at least one attribute. The same right archives and restores its records.
+ * - canCreate: canAdd, and their scope lets a new record in. A scope that limits this type only
+ *   allows new records through an attribute rule whose attribute they can update; a scope that
+ *   only lists records never does.
  */
-export type TypeRights = { canView: boolean; canAdd: boolean };
+export type TypeRights = { canView: boolean; canAdd: boolean; canCreate: boolean };
 
-const NONE: TypeRights = { canView: false, canAdd: false };
+const NONE: TypeRights = { canView: false, canAdd: false, canCreate: false };
 
 export async function recordTypeRights(access: AccessContext): Promise<Map<string, TypeRights>> {
   const [types, fields] = await Promise.all([
@@ -31,14 +34,15 @@ export async function recordTypeRights(access: AccessContext): Promise<Map<strin
       continue;
     }
     if (access.user.isAdmin) {
-      rights.set(type.id, { canView: true, canAdd: editor });
+      rights.set(type.id, { canView: true, canAdd: editor, canCreate: editor });
       continue;
     }
     const own = fields.filter((field) => field.category.recordTypeId === type.id && canSeeValue(access, field.id, field.categoryId));
-    rights.set(type.id, {
-      canView: own.length > 0,
-      canAdd: editor && own.some((field) => !field.isCreatedDate && fieldAccess(access, field.id, field.categoryId).canUpdate),
-    });
+    const canUpdate = (field: (typeof fields)[number]) => !field.isCreatedDate && fieldAccess(access, field.id, field.categoryId).canUpdate;
+    const canAdd = editor && own.some(canUpdate);
+    const ruleFields = creatableFieldIds(access, type.id);
+    const canCreate = canAdd && (ruleFields === null || own.some((field) => ruleFields.includes(field.id) && canUpdate(field)));
+    rights.set(type.id, { canView: own.length > 0, canAdd, canCreate });
   }
   return rights;
 }

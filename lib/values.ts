@@ -84,7 +84,14 @@ export function displayRaw(field: DefinedField, raw: string, options?: { label: 
   );
 }
 
-export function storedToDisplay(field: DefinedField, value: FieldValue | undefined): string {
+/** Shown for a linked record this person cannot open: hidden by their scope, or archived. */
+export const UNAVAILABLE_RECORD = "Unavailable record";
+
+/**
+ * A stored value as people read it. Pass unknownLink to show that text for a linked record that
+ * is not among the field's options, instead of its id; exports leave it out so ids import back.
+ */
+export function storedToDisplay(field: DefinedField, value: FieldValue | undefined, unknownLink?: string): string {
   const raw = storedToInput(field, value);
   if (!raw) return "";
   if (field.dataType === "CHECKBOX") return raw === "1" ? checkboxCheckedText(field) : "No";
@@ -93,7 +100,7 @@ export function storedToDisplay(field: DefinedField, value: FieldValue | undefin
   if (field.dataType === "RADIO" || field.dataType === "DROPDOWN" || field.dataType === "RECORD_LINK") {
     const selected = raw.split("|");
     return selected
-      .map((item) => field.options.find((option) => option.value === item)?.label ?? item)
+      .map((item) => field.options.find((option) => option.value === item)?.label ?? (field.dataType === "RECORD_LINK" && unknownLink ? unknownLink : item))
       .join(", ");
   }
   return raw;

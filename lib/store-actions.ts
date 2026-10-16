@@ -14,6 +14,7 @@ import { resolveRecordType } from "@/lib/record-types";
 import { getCurrentUser } from "@/lib/session";
 import { enqueueRecordEvent } from "@/lib/webhooks";
 import { runWorkflows, startManualProcess } from "@/lib/workflow";
+import { createScopeMessage } from "@/lib/row-scope";
 
 async function actor() {
   const user = await getCurrentUser();
@@ -31,7 +32,8 @@ export async function saveStore(formData: FormData) {
     : (await resolveRecordType(String(formData.get("recordTypeId") ?? ""))).current?.id;
   if (!recordTypeId) return { error: locationId ? "This record no longer exists." : "Choose a record type." };
   const typeRights = await rightsForType(access, recordTypeId);
-  if (locationId ? !typeRights.canView : !typeRights.canAdd) {
+  if (locationId ? !typeRights.canView : !typeRights.canCreate) {
+    if (!locationId && typeRights.canAdd) return { error: createScopeMessage([]) };
     return { error: locationId ? "You do not have access to this record." : "You cannot add records of this type." };
   }
   const submitted = (field: LoadedField) => {

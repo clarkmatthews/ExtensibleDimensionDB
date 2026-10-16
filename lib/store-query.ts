@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { withLinkOptions } from "@/lib/record-types";
 import { categoryAccess, fieldAccess, type AccessContext } from "@/lib/permissions";
 import { allowedIds } from "@/lib/row-scope";
-import { storedToDisplay, storedToInput, type DefinedField } from "@/lib/values";
+import { storedToDisplay, storedToInput, UNAVAILABLE_RECORD, type DefinedField } from "@/lib/values";
 
 /** The attributes of one record type that this person may view, with link choices loaded. */
 export async function loadVisibleFields(access: AccessContext, recordTypeId: string) {
@@ -21,7 +21,12 @@ export async function loadVisibleFields(access: AccessContext, recordTypeId: str
   });
 }
 
-export async function loadStoreRows(fields: DefinedField[], query: string, recordTypeId: string, access: AccessContext) {
+/**
+ * The rows of one record type this person may see, with display values. On screen, links to
+ * records they cannot open read "Unavailable record"; exports keep the ids (forExport) so a file
+ * imports back without losing those links.
+ */
+export async function loadStoreRows(fields: DefinedField[], query: string, recordTypeId: string, access: AccessContext, options: { forExport?: boolean } = {}) {
   const allowed = await allowedIds(access, recordTypeId);
   const locations = await prisma.location.findMany({
     where: { isActive: true, recordTypeId, ...(allowed ? { id: { in: allowed } } : {}) },
@@ -34,7 +39,7 @@ export async function loadStoreRows(fields: DefinedField[], query: string, recor
       const values: Record<string, string> = {};
       for (const field of fields) {
         const stored = location.values.find((value) => value.fieldId === field.id);
-        values[field.id] = storedToDisplay(field, stored);
+        values[field.id] = storedToDisplay(field, stored, options.forExport ? undefined : UNAVAILABLE_RECORD);
       }
       return { id: location.id, values, haystack: Object.values(values).join(" ").toLowerCase() };
     })
