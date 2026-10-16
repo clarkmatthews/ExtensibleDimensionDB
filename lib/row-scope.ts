@@ -32,14 +32,45 @@ export const SCOPE_ATTRIBUTE_TYPES = [
 
 export type ScopeRuleKind = "RECORDS" | "ATTRIBUTE";
 
+/**
+ * How a rule compares values. Choices and links compare their stored keys; phone numbers and ZIP
+ * codes compare digits only, so "(213) 555-0123" matches "213-555-0123"; other text ignores case
+ * and extra spaces, so "west " matches "West".
+ */
+export type ScopeMatch = "key" | "digits" | "text";
+
+export function matchFor(dataType: string | null | undefined): ScopeMatch {
+  if (dataType === "RADIO" || dataType === "DROPDOWN" || dataType === "RECORD_LINK") return "key";
+  if (dataType === "PHONE" || dataType === "ZIPCODE") return "digits";
+  return "text";
+}
+
+/** A value in the form a rule compares. */
+export function normalizeScopeValue(value: string, match: ScopeMatch): string {
+  const trimmed = value.trim();
+  if (match === "key") return trimmed;
+  if (match === "digits") {
+    const digits = trimmed.replace(/\D/g, "");
+    if (digits) return digits;
+  }
+  return trimmed.normalize("NFKC").replace(/\s+/g, " ").toLowerCase();
+}
+
 export type ScopeRuleView = {
   id: string;
   scopeId: string;
   recordTypeId: string;
   kind: ScopeRuleKind;
   fieldId: string | null;
-  /** Record links are stored pipe-separated and match when any linked record is accepted. */
-  link: boolean;
+  /**
+   * The attribute holds a pipe-separated list (a record link, or a list that allows several
+   * choices), so the row matches when any piece is accepted.
+   */
+  split: boolean;
+  /** How values are compared. */
+  match: ScopeMatch;
+  /** The rule's attribute was deleted, so the rule matches nothing. */
+  fieldMissing?: boolean;
   sourceRuleId: string | null;
   recordIds: string[];
   values: string[];
@@ -55,6 +86,11 @@ export const EMPTY_ROW_SCOPE: RowScopeData = { assignments: [], scopes: [], rule
 
 export const LEAVES_SCOPE = "This change would move the record outside your scope.";
 export const CREATE_SCOPE = "A new record must match your scope.";
+/** The create error, naming the attributes a new record would have to set. */
+export function createScopeMessage(attributes: string[]) {
+  if (!attributes.length) return `${CREATE_SCOPE} Your scope only lists existing records, so you cannot add new ones here.`;
+  return `${CREATE_SCOPE} Set ${attributes.join(" or ")} to a value your scope allows.`;
+}
 export const OUTSIDE_SCOPE = "This record is outside your scope.";
 
 type StoredValue = { locationId: string; fieldId: string; valueText: string | null };
@@ -92,21 +128,39 @@ export function restrictedRecordTypeIds(access: ScopeAccess): string[] {
   return [...new Set(data.rules.filter((rule) => scopes.has(rule.scopeId)).map((rule) => rule.recordTypeId))];
 }
 
-/** Values a rule accepts: its own list, plus the records of the rule it points at. */
+/**
+ * Values a rule accepts, in compared form: its own list, plus the records of the rule it points at.
+ * A rule whose attribute is gone accepts nothing.
+ */
 export function acceptedValues(rule: ScopeRuleView, rules: ScopeRuleView[]): Set<string> {
-  const accepted = new Set(rule.values.filter(Boolean));
+  const accepted = new Set<string>();
+  if (rule.fieldMissing) return accepted;
+  for (const value of rule.values) {
+    const normalized = normalizeScopeValue(value, rule.match);
+    if (normalized) accepted.add(normalized);
+  }
   if (!rule.sourceRuleId) return accepted;
   const source = rules.find((item) => item.id === rule.sourceRuleId && item.scopeId === rule.scopeId && item.kind === "RECORDS");
   for (const id of source?.recordIds ?? []) if (id) accepted.add(id);
   return accepted;
 }
 
-/** True when a stored attribute equals an accepted value. Links match any piece of a pipe-separated list. */
-export function storedMatches(stored: string | null | undefined, accepted: ReadonlySet<string>, link: boolean): boolean {
+/**
+ * True when a stored attribute equals an accepted value (already normalized with the same
+ * match). A list attribute matches when any piece of its pipe-separated value is accepted.
+ */
+export function storedMatches(
+  stored: string | null | undefined,
+  accepted: ReadonlySet<string>,
+  options: { split: boolean; match: ScopeMatch },
+): boolean {
   const raw = stored ?? "";
-  if (!raw || accepted.size === 0) return false;
-  if (!link) return accepted.has(raw);
-  return raw.split("|").some((part) => part && accepted.has(part));
+  if (!raw.trim() || accepted.size === 0) return false;
+  const pieces = options.split ? raw.split("|") : [raw];
+  return pieces.some((piece) => {
+    const normalized = normalizeScopeValue(piece, options.match);
+    return Boolean(normalized) && accepted.has(normalized);
+  });
 }
 
 /**
@@ -121,12 +175,12 @@ export function matchingLocationIds(rules: ScopeRuleView[], values: StoredValue[
       for (const id of rule.recordIds) if (id) ids.add(id);
       continue;
     }
-    if (!rule.fieldId) continue;
+    if (!rule.fieldId || rule.fieldMissing) continue;
     const accepted = acceptedValues(rule, catalog);
     if (!accepted.size) continue;
     for (const value of values) {
       if (value.fieldId !== rule.fieldId) continue;
-      if (storedMatches(value.valueText, accepted, rule.link)) ids.add(value.locationId);
+      if (storedMatches(value.valueText, accepted, rule)) ids.add(value.locationId);
     }
   }
   return ids;
@@ -148,9 +202,9 @@ export function rowMatches(
       if (locationId && rule.recordIds.includes(locationId)) return true;
       continue;
     }
-    if (!rule.fieldId) continue;
+    if (!rule.fieldId || rule.fieldMissing) continue;
     const accepted = acceptedValues(rule, catalog);
-    if (storedMatches(values.get(rule.fieldId) ?? "", accepted, rule.link)) return true;
+    if (storedMatches(values.get(rule.fieldId) ?? "", accepted, rule)) return true;
   }
   return false;
 }
@@ -168,13 +222,28 @@ export function staysInScope(access: ScopeAccess, recordTypeId: string, location
   return rowMatches(rulesFor(access, recordTypeId), locationId, values, scopeCatalog(access));
 }
 
+/**
+ * Attributes that could let this person add a record of this type: those of their working
+ * attribute rules. Null when the type is not limited, so any new record is allowed. An empty
+ * list means their scope only names existing records, so they cannot add one.
+ */
+export function creatableFieldIds(access: ScopeAccess, recordTypeId: string): string[] | null {
+  const rules = rulesFor(access, recordTypeId);
+  if (!rules.length) return null;
+  const catalog = scopeCatalog(access);
+  const ids = rules.flatMap((rule) =>
+    rule.kind === "ATTRIBUTE" && rule.fieldId && !rule.fieldMissing && acceptedValues(rule, catalog).size ? [rule.fieldId] : [],
+  );
+  return [...new Set(ids)];
+}
+
 export async function loadRowScope(): Promise<RowScopeData> {
   const [scopes, assignments, rules] = await Promise.all([
     prisma.scope.findMany({ select: { id: true, isActive: true } }),
     prisma.scopeAssignment.findMany({ select: { scopeId: true, subjectType: true, subjectId: true } }),
     prisma.scopeRule.findMany({
       include: {
-        field: { select: { dataType: true } },
+        field: { select: { dataType: true, multiple: true } },
         records: { select: { locationId: true } },
         values: { select: { valueText: true } },
       },
@@ -189,7 +258,9 @@ export async function loadRowScope(): Promise<RowScopeData> {
       recordTypeId: rule.recordTypeId,
       kind: rule.kind,
       fieldId: rule.fieldId,
-      link: rule.field?.dataType === "RECORD_LINK",
+      split: rule.field?.dataType === "RECORD_LINK" || (rule.field?.dataType === "DROPDOWN" && rule.field.multiple),
+      match: matchFor(rule.field?.dataType),
+      fieldMissing: rule.kind === "ATTRIBUTE" && !rule.field,
       sourceRuleId: rule.sourceRuleId,
       recordIds: rule.records.map((row) => row.locationId),
       values: rule.values.map((row) => row.valueText),
@@ -246,6 +317,24 @@ export async function locationConstraint(access: ScopeAccess): Promise<Prisma.Lo
   return { OR: [{ recordTypeId: { notIn: restricted } }, { id: { in: ids } }] };
 }
 
+/**
+ * A notice filter that leaves out notices about records outside this person's scope, whether the
+ * record is named on the notice or reached through its change or action. Undefined when nothing
+ * is limited. The unread count and the dashboard use the same filter, so they agree.
+ */
+export async function noticeConstraint(access: ScopeAccess): Promise<Prisma.NotificationWhereInput | undefined> {
+  const scope = await locationConstraint(access);
+  if (!scope) return undefined;
+  return {
+    OR: [
+      { locationId: { not: null }, location: scope },
+      { locationId: null, fieldChangeId: { not: null }, fieldChange: { location: scope } },
+      { locationId: null, fieldChangeId: null, taskId: { not: null }, task: { storeProcess: { location: scope } } },
+      { locationId: null, fieldChangeId: null, taskId: null },
+    ],
+  };
+}
+
 /** True when this record is one the person may see. A missing record is not. */
 export async function locationVisible(access: ScopeAccess, locationId: string): Promise<boolean> {
   if (!locationId) return false;
@@ -299,4 +388,38 @@ export async function visibleProposals<T extends ProposalRow>(access: ScopeAcces
     }
     return rowMatches(rules, null, values, scopeCatalog(access));
   });
+}
+
+/**
+ * The people in this list who may see this record, for notices about it. Inactive people are
+ * dropped. People whose scopes do not limit the record's type always may.
+ */
+export async function usersWhoCanSee(userIds: string[], locationId: string): Promise<string[]> {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  if (!unique.length || !locationId) return [];
+  const [location, users, data] = await Promise.all([
+    prisma.location.findUnique({ where: { id: locationId }, select: { id: true, recordTypeId: true } }),
+    prisma.user.findMany({ where: { id: { in: unique }, isActive: true }, select: { id: true, isAdmin: true, groups: { select: { groupId: true } } } }),
+    loadRowScope(),
+  ]);
+  if (!location) return [];
+  // People with the same scopes see the same rows, so each set of scopes is resolved once.
+  const verdicts = new Map<string, Promise<boolean>>();
+  const allowed: string[] = [];
+  for (const user of users) {
+    const access: ScopeAccess = { user, groupIds: user.groups.map((row) => row.groupId), rowScope: data };
+    const rules = rulesFor(access, location.recordTypeId);
+    if (!rules.length) {
+      allowed.push(user.id);
+      continue;
+    }
+    const key = [...assignedScopeIds(user.id, access.groupIds ?? [], data)].sort().join(",");
+    let verdict = verdicts.get(key);
+    if (!verdict) {
+      verdict = allowedIds(access, location.recordTypeId).then((ids) => !ids || ids.includes(location.id));
+      verdicts.set(key, verdict);
+    }
+    if (await verdict) allowed.push(user.id);
+  }
+  return allowed;
 }

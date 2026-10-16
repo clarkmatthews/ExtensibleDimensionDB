@@ -1,7 +1,7 @@
 import { parseCsv, unguardCell } from "@/lib/csv";
 import type { AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { allowedIds, OUTSIDE_SCOPE } from "@/lib/row-scope";
+import { allowedIds, createScopeMessage, creatableFieldIds, LEAVES_SCOPE, OUTSIDE_SCOPE, staysInScope } from "@/lib/row-scope";
 import {
   canUpdateField,
   choicesFor,
@@ -212,6 +212,13 @@ async function planRow(item: PreparedRow, ctx: SaveContext, access: AccessContex
   const stored = item.locationId ? await storedText(item.locationId) : new Map<string, string>();
   const plan = await planSave(ctx, access, item.locationId, (field) => item.values.get(field.id), stored);
   if (!plan.ok) return { ...base, action: "error", messages: plan.errors };
+  // The same scope check a save makes, so the preview does not promise rows that would fail.
+  const resulting = new Map(stored);
+  for (const write of plan.writes) resulting.set(write.field.id, write.raw);
+  if (!staysInScope(access, ctx.recordTypeId, item.locationId || null, resulting)) {
+    const names = (creatableFieldIds(access, ctx.recordTypeId) ?? []).flatMap((id) => ctx.fields.find((field) => field.id === id)?.friendlyName ?? []);
+    return { ...base, action: "error", messages: [item.locationId ? LEAVES_SCOPE : createScopeMessage(names)] };
+  }
   if (!item.locationId) return { ...base, action: "create", messages: [] };
   const current = await prisma.fieldValue.findMany({ where: { locationId: item.locationId } });
   const changes = plan.writes.some((write) => {

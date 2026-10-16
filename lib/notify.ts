@@ -1,9 +1,31 @@
 import { deliverMail } from "@/lib/mail";
 import { prisma } from "@/lib/prisma";
+import { usersWhoCanSee } from "@/lib/row-scope";
 import { siteName } from "@/lib/site";
 
+/** The record a notice is about: given directly, or through its action or change. */
+async function noticeRecord(taskId?: string, fieldChangeId?: string, locationId?: string) {
+  if (locationId) return locationId;
+  if (taskId) {
+    const task = await prisma.task.findUnique({ where: { id: taskId }, select: { locationId: true } });
+    if (task) return task.locationId;
+  }
+  if (fieldChangeId) {
+    const change = await prisma.fieldChange.findUnique({ where: { id: fieldChangeId }, select: { locationId: true } });
+    if (change) return change.locationId;
+  }
+  return null;
+}
+
+/**
+ * Saves a notice for each person and emails them. A notice about a record only goes to people
+ * whose scopes let them see it, so neither the message nor the email reaches anyone else.
+ */
 export async function notifyUsers(userIds: string[], message: string, taskId?: string, fieldChangeId?: string, locationId?: string) {
-  const unique = [...new Set(userIds)].filter(Boolean);
+  let unique = [...new Set(userIds)].filter(Boolean);
+  if (!unique.length) return;
+  const recordId = await noticeRecord(taskId, fieldChangeId, locationId);
+  if (recordId) unique = await usersWhoCanSee(unique, recordId);
   if (!unique.length) return;
   await prisma.notification.createMany({
     data: unique.map((userId) => ({ userId, message, taskId, fieldChangeId, locationId })),

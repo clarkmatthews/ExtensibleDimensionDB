@@ -6,7 +6,7 @@ import { linkedFrom, recordLabels } from "@/lib/record-types";
 import { catchUpFileText, fileText, visibleFile } from "@/lib/file-access";
 import { filterVisibleIds, locationConstraint } from "@/lib/row-scope";
 import { parseFileTokens } from "@/lib/files";
-import { checkboxCheckedText, displayStored, type DefinedField } from "@/lib/values";
+import { checkboxCheckedText, displayStored, UNAVAILABLE_RECORD, type DefinedField } from "@/lib/values";
 
 const SEARCH_LIMIT = 25;
 const CHANGE_LIMIT = 200;
@@ -133,7 +133,7 @@ function definedField(field: LoadedField, options: { label: string; value: strin
 /** Key in the label map that holds record labels for link attributes. */
 const LINK_LABELS = "\u0000links";
 
-async function labelsFor(fields: LoadedField[], values: FieldValue[]) {
+async function labelsFor(ctx: AccessContext, fields: LoadedField[], values: FieldValue[]) {
   const wanted = new Map<string, Set<string>>();
   for (const value of values) {
     const field = fields.find((item) => item.id === value.fieldId);
@@ -157,7 +157,12 @@ async function labelsFor(fields: LoadedField[], values: FieldValue[]) {
     const field = fields.find((item) => item.id === value.fieldId);
     return field?.dataType === "RECORD_LINK" && value.valueText ? value.valueText.split("|").filter(Boolean) : [];
   });
-  if (linkIds.length) labels.set(LINK_LABELS, await recordLabels(linkIds));
+  if (linkIds.length) {
+    // A linked record outside this person's scope is not named.
+    const visible = await filterVisibleIds(ctx, linkIds);
+    const named = await recordLabels([...visible]);
+    labels.set(LINK_LABELS, new Map(linkIds.map((id) => [id, visible.has(id) ? (named.get(id) ?? id) : UNAVAILABLE_RECORD])));
+  }
   return labels;
 }
 
@@ -224,7 +229,7 @@ async function cardsFor(ctx: AccessContext, fields: LoadedField[], requestedIds:
   const values = await prisma.fieldValue.findMany({
     where: { locationId: { in: locationIds }, fieldId: { in: fields.map((field) => field.id) } },
   });
-  const labels = await labelsFor(fields, values);
+  const labels = await labelsFor(ctx, fields, values);
   return locationIds.map((id) => knowledgeCard(fields, values.filter((value) => value.locationId === id), labels, id, active.get(id)));
 }
 

@@ -21,6 +21,14 @@ export default async function NewStorePage({ searchParams }: { searchParams: Pro
   if (!current) return <p className="text-sm text-muted">You do not have access to any record types.</p>;
   // Only someone who can fill in at least one attribute of this type can create its records.
   if (!rights.canAdd) return <ModuleDenied />;
+  // A scope that limits this type only lets new records in through an attribute rule.
+  if (!rights.canCreate) {
+    return (
+      <p className="rounded-md bg-amber-50 px-3 py-2 text-sm">
+        Your scope does not let you add {current.name} records. It only includes specific existing records. Ask an administrator if you need to add one.
+      </p>
+    );
+  }
   const fields = await withLinkOptions(
     await prisma.fieldDefinition.findMany({
       where: { isActive: true, category: { isActive: true, recordTypeId: current.id } },

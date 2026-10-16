@@ -15,7 +15,7 @@ import { WatchToggle } from "@/components/watch-toggle";
 import { ConfirmArchive } from "@/components/confirm-archive";
 import { restoreRecord, startWorkflow } from "@/lib/store-actions";
 import { filterVisibleIds, locationVisible } from "@/lib/row-scope";
-import { localDateInput, storedToInput } from "@/lib/values";
+import { localDateInput, storedToInput, UNAVAILABLE_RECORD } from "@/lib/values";
 
 export default async function StorePage({
   params,
@@ -81,7 +81,7 @@ export default async function StorePage({
     const stored = (location.values.find((value) => value.fieldId === field.id)?.valueText ?? "").split("|").filter(Boolean);
     const extra = stored
       .filter((id) => !known.has(id))
-      .map((id, index) => ({ ...field.options[0], id: `stale-${id}`, fieldId: field.id, value: id, label: visibleStale.has(id) ? `${staleLabels.get(id) ?? id} (archived)` : id, parentValues: "", isDefault: false, sortOrder: -1 - index }));
+      .map((id, index) => ({ ...field.options[0], id: `stale-${id}`, fieldId: field.id, value: id, label: visibleStale.has(id) ? `${staleLabels.get(id) ?? id} (archived)` : UNAVAILABLE_RECORD, parentValues: "", isDefault: false, sortOrder: -1 - index }));
     return extra.length ? { ...field, options: [...extra, ...field.options] } : field;
   });
   const choiceMeta = await loadFieldChoices(

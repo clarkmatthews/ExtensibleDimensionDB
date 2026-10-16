@@ -13,7 +13,7 @@ import {
   type LoadedField,
 } from "@/lib/record-save";
 import { recordLabels } from "@/lib/record-types";
-import { CREATE_SCOPE, LEAVES_SCOPE, locationVisible, staysInScope } from "@/lib/row-scope";
+import { createScopeMessage, creatableFieldIds, LEAVES_SCOPE, locationVisible, staysInScope, usersWhoCanSee, visibleProposals } from "@/lib/row-scope";
 import { displayRaw, displayStored } from "@/lib/values";
 import { enqueueRecordEvent } from "@/lib/webhooks";
 import { runWorkflows } from "@/lib/workflow";
@@ -114,7 +114,8 @@ export async function createProposal(input: ProposalInput): Promise<{ ok: boolea
   const resulting = new Map(stored);
   for (const write of plan.writes) resulting.set(write.field.id, write.raw);
   if (!staysInScope(access, recordTypeId, locationId || null, resulting)) {
-    return { ok: false, message: locationId ? LEAVES_SCOPE : CREATE_SCOPE };
+    const names = (creatableFieldIds(access, recordTypeId) ?? []).flatMap((id) => ctx.fields.find((field) => field.id === id)?.friendlyName ?? []);
+    return { ok: false, message: locationId ? LEAVES_SCOPE : createScopeMessage(names) };
   }
 
   const changes = await describeChanges(locationId, plan.writes.filter((write) => inputs.has(write.field.id)));
@@ -130,7 +131,9 @@ export async function createProposal(input: ProposalInput): Promise<{ ok: boolea
       changes: changes as unknown as Prisma.InputJsonValue,
     },
   });
-  await notifyUsers(await reviewerIds(access.user.id), `An AI assistant proposed a change for ${access.user.name}. Review it on AI proposals.`);
+  // Reviewers outside the record's scope would not see the proposal, so they are not told about it.
+  const reviewers = await reviewerIds(access.user.id);
+  await notifyUsers(locationId ? await usersWhoCanSee(reviewers, locationId) : reviewers, `An AI assistant proposed a change for ${access.user.name}. Review it on AI proposals.`);
   return {
     ok: true,
     proposalId: proposal.id,
@@ -163,13 +166,28 @@ export function reviewBlocker(reviewer: AccessContext, proposal: { proposedById:
 }
 
 /**
+ * Why this reviewer may not act on this proposal, including when its record is outside their
+ * scope. Checked before anything changes, so an out-of-scope request leaves the proposal pending
+ * for someone who can see it. The message does not say whether the record exists.
+ */
+async function reviewDenied(
+  reviewer: AccessContext,
+  proposal: { proposedById: string; status: string; locationId: string | null; recordTypeId: string; changes: unknown },
+) {
+  const blocked = reviewBlocker(reviewer, proposal);
+  if (blocked) return blocked;
+  if (!(await visibleProposals(reviewer, [proposal])).length) return "This proposal no longer exists.";
+  return null;
+}
+
+/**
  * Applies an approved proposal. The reviewer must be able to update every attribute in it,
  * and the values are validated again against the record as it is now.
  */
 export async function approveProposal(proposalId: string, reviewer: AccessContext, note: string) {
   const pending = await prisma.changeProposal.findUnique({ where: { id: proposalId } });
   if (!pending) return "This proposal no longer exists.";
-  const blocked = reviewBlocker(reviewer, pending);
+  const blocked = await reviewDenied(reviewer, pending);
   if (blocked) return blocked;
   // Claim the proposal so two reviewers cannot both apply it.
   const claimed = await prisma.changeProposal.updateMany({
@@ -223,7 +241,7 @@ export async function approveProposal(proposalId: string, reviewer: AccessContex
 export async function rejectProposal(proposalId: string, reviewer: AccessContext, note: string) {
   const proposal = await prisma.changeProposal.findUnique({ where: { id: proposalId } });
   if (!proposal) return "This proposal no longer exists.";
-  const blocked = reviewBlocker(reviewer, proposal);
+  const blocked = await reviewDenied(reviewer, proposal);
   if (blocked) return blocked;
   const updated = await prisma.changeProposal.updateMany({
     where: { id: proposalId, status: "PENDING" },

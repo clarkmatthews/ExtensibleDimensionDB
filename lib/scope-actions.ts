@@ -117,17 +117,20 @@ export async function saveScopeRule(formData: FormData) {
     }
 
     const data = { recordTypeId, kind, fieldId, sourceRuleId } as const;
-    const rule = ruleId
-      ? await prisma.scopeRule.update({ where: { id: ruleId }, data })
-      : await prisma.scopeRule.create({ data: { scopeId, ...data } });
-    await prisma.scopeRuleRecord.deleteMany({ where: { ruleId: rule.id } });
-    await prisma.scopeRuleValue.deleteMany({ where: { ruleId: rule.id } });
-    if (recordIds.length) {
-      await prisma.scopeRuleRecord.createMany({ data: recordIds.map((locationId) => ({ ruleId: rule.id, locationId })) });
-    }
-    if (values.length) {
-      await prisma.scopeRuleValue.createMany({ data: values.map((valueText) => ({ ruleId: rule.id, valueText })) });
-    }
+    // One transaction: a failure part way leaves the rule as it was, not emptied.
+    await prisma.$transaction(async (tx) => {
+      const rule = ruleId
+        ? await tx.scopeRule.update({ where: { id: ruleId }, data })
+        : await tx.scopeRule.create({ data: { scopeId, ...data } });
+      await tx.scopeRuleRecord.deleteMany({ where: { ruleId: rule.id } });
+      await tx.scopeRuleValue.deleteMany({ where: { ruleId: rule.id } });
+      if (recordIds.length) {
+        await tx.scopeRuleRecord.createMany({ data: recordIds.map((locationId) => ({ ruleId: rule.id, locationId })) });
+      }
+      if (values.length) {
+        await tx.scopeRuleValue.createMany({ data: values.map((valueText) => ({ ruleId: rule.id, valueText })) });
+      }
+    });
     revalidatePath(PAGE);
     redirect(`${PAGE}?open=${scopeId}&saved=rule`);
   });
@@ -176,4 +179,31 @@ export async function saveSubjectScopes(formData: FormData) {
     const join = destination.includes("?") ? "&" : "?";
     redirect(`${destination}${join}saved=scopes${subjectType === "GROUP" ? `&open=${subjectId}` : ""}`);
   });
+}
+
+/** Most records a picker search returns. */
+const PICKER_LIMIT = 50;
+
+export type PickerRecord = { id: string; recordTypeId: string; label: string };
+
+/**
+ * Active records of one type for the scope rule picker, matched on their unique identifier.
+ * Only people who can change scopes can search, so record names are not listed to viewers.
+ */
+export async function searchScopeRecords(recordTypeId: string, query: string): Promise<PickerRecord[]> {
+  const user = await getCurrentUser();
+  if (!user) return [];
+  if (!canEditModule(await loadAccess(user), "ACCESS")) return [];
+  const needle = query.trim().slice(0, 200);
+  const rows = await prisma.location.findMany({
+    where: {
+      isActive: true,
+      recordTypeId,
+      ...(needle ? { values: { some: { field: { isStoreKey: true }, valueText: { contains: needle, mode: "insensitive" } } } } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+    take: PICKER_LIMIT,
+    select: { id: true, values: { where: { field: { isStoreKey: true } }, select: { valueText: true } } },
+  });
+  return rows.map((row) => ({ id: row.id, recordTypeId, label: row.values[0]?.valueText || row.id }));
 }

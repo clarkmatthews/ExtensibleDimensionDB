@@ -50,7 +50,7 @@ export default async function StoresPage({
   const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const slice = rows.slice((page - 1) * pageSize, page * pageSize);
-  const canCreate = rights.canAdd;
+  const canCreate = rights.canCreate;
   // Set after a new record is saved, so the list can confirm it and link to it.
   const createdId = typeof params.created === "string" ? params.created : "";
   const createdShown = Boolean(createdId) && rows.some((row) => row.id === createdId);

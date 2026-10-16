@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { ScopeRuleForm, type ScopeRecordRule, type ScopeRuleField, type ScopeRuleRecord } from "@/components/scope-rule-form";
+import { recordLabels } from "@/lib/record-types";
 import { deleteScope, deleteScopeRule, saveScope, setScopeActive } from "@/lib/scope-actions";
 import { canEditModule, canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -28,7 +29,7 @@ export default async function ScopesPage({
   if (!canViewModule(access, "ACCESS")) return <ModuleDenied />;
   const canEdit = canEditModule(access, "ACCESS");
   const params = await searchParams;
-  const [scopes, types, fieldRows, locations, groups, people] = await Promise.all([
+  const [scopes, types, fieldRows, groups, people] = await Promise.all([
     prisma.scope.findMany({
       orderBy: { name: "asc" },
       include: {
@@ -37,7 +38,7 @@ export default async function ScopesPage({
           orderBy: { id: "asc" },
           include: {
             recordType: { select: { name: true } },
-            field: { select: { friendlyName: true, dataType: true } },
+            field: { select: { friendlyName: true, dataType: true, isActive: true, category: { select: { isActive: true } } } },
             sourceRule: { select: { id: true, recordType: { select: { name: true } } } },
             records: { select: { locationId: true } },
             values: { select: { valueText: true }, orderBy: { valueText: "asc" } },
@@ -58,26 +59,31 @@ export default async function ScopesPage({
         options: { orderBy: { sortOrder: "asc" }, select: { value: true, label: true } },
       },
     }),
-    prisma.location.findMany({
-      where: { isActive: true },
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        recordTypeId: true,
-        values: { where: { field: { isStoreKey: true } }, select: { valueText: true } },
-      },
-    }),
     prisma.group.findMany({ select: { id: true, name: true } }),
     prisma.user.findMany({ select: { id: true, name: true } }),
   ]);
   const groupName = new Map(groups.map((group) => [group.id, group.name]));
   const personName = new Map(people.map((person) => [person.id, person.name]));
-  const recordLabel = new Map(locations.map((location) => [location.id, location.values[0]?.valueText || location.id]));
-  const records: ScopeRuleRecord[] = locations.map((location) => ({
-    id: location.id,
-    recordTypeId: location.recordTypeId,
-    label: recordLabel.get(location.id) ?? location.id,
-  }));
+  // Only the records rules already name are loaded; the rule form searches for others.
+  const linkFields = new Map(fieldRows.filter((field) => field.dataType === "RECORD_LINK").map((field) => [field.id, field.linkTypeId ?? ""]));
+  const named = scopes.flatMap((scope) =>
+    scope.rules.flatMap((rule) => [
+      ...rule.records.map((row) => ({ id: row.locationId, recordTypeId: rule.recordTypeId })),
+      ...(rule.fieldId && linkFields.has(rule.fieldId) ? rule.values.map((row) => ({ id: row.valueText, recordTypeId: linkFields.get(rule.fieldId!)! })) : []),
+    ]),
+  );
+  const recordLabel = await recordLabels(named.map((row) => row.id));
+  const records: ScopeRuleRecord[] = [...new Map(named.map((row) => [row.id, { id: row.id, recordTypeId: row.recordTypeId, label: recordLabel.get(row.id) ?? row.id }])).values()];
+  /** Why a rule matches nothing, or is worth a second look. Null when it is fine. */
+  const ruleProblem = (rule: (typeof scopes)[number]["rules"][number]) => {
+    if (rule.kind === "RECORDS") return rule.records.length ? null : { serious: true, text: "Matches no records: the records it listed were deleted. People with this scope see no rows of this type." };
+    if (!rule.field) return { serious: true, text: "Matches no records: its attribute was deleted. People with this scope see no rows of this type. Edit it to pick another attribute, or delete it." };
+    if (!rule.values.length && !rule.sourceRule) return { serious: true, text: "Matches no records: it has no values left and its record list was deleted. People with this scope see no rows of this type." };
+    if (!rule.field.isActive || !rule.field.category.isActive) return { serious: false, text: "Its attribute is turned off. The rule still matches the values already stored, but nobody can change them." };
+    return null;
+  };
+  const brokenCount = (scope: (typeof scopes)[number]) => scope.rules.filter((rule) => ruleProblem(rule)?.serious).length;
+  const brokenScopes = scopes.filter((scope) => scope.isActive && brokenCount(scope) > 0);
   const fields: ScopeRuleField[] = fieldRows.map((field) => ({
     id: field.id,
     recordTypeId: field.category.recordTypeId,
@@ -102,12 +108,18 @@ export default async function ScopesPage({
       {params.error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{params.error}</p> : null}
       {SAVED[params.saved ?? ""] ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-pine">{SAVED[params.saved ?? ""]}</p> : null}
       {!canEdit ? <p className="text-sm text-muted">You can view scopes. Edit access to Groups is required to change them.</p> : null}
+      {brokenScopes.length ? (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm" role="status">
+          {brokenScopes.length === 1 ? "1 scope has" : `${brokenScopes.length} scopes have`} a rule that matches no records, so the people it applies to see no rows of that record type:{" "}
+          {brokenScopes.map((scope) => scope.name).join(", ")}.
+        </p>
+      ) : null}
       <fieldset disabled={!canEdit} className="min-w-0 space-y-3 border-0 p-0">
-        <form action={saveScope} className="panel grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]">
+        {canEdit ? <form action={saveScope} className="panel grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]">
           <input className="field" name="name" placeholder="New scope name" required />
           <input className="field" name="description" placeholder="Description" />
           <button className="btn" type="submit">Add scope</button>
-        </form>
+        </form> : null}
         {scopes.map((scope) => {
           const recordRules: ScopeRecordRule[] = scope.rules
             .filter((rule) => rule.kind === "RECORDS")
@@ -121,6 +133,11 @@ export default async function ScopesPage({
                 <span className="ml-2 text-sm text-muted">
                   {scope.rules.length === 1 ? "1 rule" : `${scope.rules.length} rules`} · {assigned.length === 1 ? "1 assignment" : `${assigned.length} assignments`}
                 </span>
+                {brokenCount(scope) ? (
+                  <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+                    {brokenCount(scope) === 1 ? "1 rule matches nothing" : `${brokenCount(scope)} rules match nothing`}
+                  </span>
+                ) : null}
               </summary>
               <div className="mt-3 space-y-4">
                 <form action={saveScope} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
@@ -154,24 +171,28 @@ export default async function ScopesPage({
                     const summary = rule.kind === "RECORDS"
                       ? `${rule.recordType.name}: ${names.join(", ") || "no records"}`
                       : `${rule.recordType.name} where ${rule.field?.friendlyName ?? "attribute"} is ${[rule.sourceRule ? `the records in ${rule.sourceRule.recordType.name}` : "", valueLabels.join(", ")].filter(Boolean).join(", or ") || "nothing"}`;
+                    const problem = ruleProblem(rule);
                     return (
                       <div key={rule.id} className="space-y-2">
                         <div className="flex flex-wrap items-start justify-between gap-2 text-sm">
-                          <p>{summary}</p>
+                          <div>
+                            <p>{summary}</p>
+                            {problem ? <p className={`mt-1 text-xs ${problem.serious ? "font-semibold text-danger" : "text-muted"}`}>{problem.text}</p> : null}
+                          </div>
                           <form action={deleteScopeRule}>
                             <input type="hidden" name="scopeId" value={scope.id} />
                             <input type="hidden" name="ruleId" value={rule.id} />
                             <button className="btn-quiet" type="submit">Delete rule</button>
                           </form>
                         </div>
-                        <details>
+                        {canEdit ? <details>
                           <summary className="cursor-pointer text-sm font-semibold text-pine">Edit rule</summary>
                           <div className="mt-2">
                             <ScopeRuleForm
                               scopeId={scope.id}
                               types={types}
                               fields={fields}
-                              records={records}
+                              chosenRecords={records}
                               recordRules={recordRules.filter((item) => item.id !== rule.id)}
                               initial={{
                                 id: rule.id,
@@ -184,15 +205,17 @@ export default async function ScopesPage({
                               }}
                             />
                           </div>
-                        </details>
+                        </details> : null}
                       </div>
                     );
                   })}
                 </div>
-                <div>
-                  <h3 className="mb-2 text-sm font-semibold">Add a rule</h3>
-                  <ScopeRuleForm scopeId={scope.id} types={types} fields={fields} records={records} recordRules={recordRules} />
-                </div>
+                {canEdit ? (
+                  <div>
+                    <h3 className="mb-2 text-sm font-semibold">Add a rule</h3>
+                    <ScopeRuleForm scopeId={scope.id} types={types} fields={fields} recordRules={recordRules} />
+                  </div>
+                ) : null}
               </div>
             </details>
           );

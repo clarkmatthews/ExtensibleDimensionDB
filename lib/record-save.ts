@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { withLinkOptions } from "@/lib/record-types";
 import { parseFileTokens } from "@/lib/files";
 import { validateValue, type Choice } from "@/lib/validators";
-import { CREATE_SCOPE, LEAVES_SCOPE, locationVisible, staysInScope } from "@/lib/row-scope";
+import { createScopeMessage, creatableFieldIds, LEAVES_SCOPE, locationVisible, staysInScope } from "@/lib/row-scope";
 import { defaultInput, displayRaw, displayStored, inputToStored, localDateInput, rulesFromField, type DefinedField } from "@/lib/values";
 import type { SavedChange } from "@/lib/workflow";
 
@@ -211,7 +211,9 @@ export async function saveRecord(input: {
   const resulting = new Map(stored);
   for (const write of plan.writes) resulting.set(write.field.id, write.raw);
   if (!staysInScope(access, ctx.recordTypeId, locationId || null, resulting)) {
-    return { error: locationId ? LEAVES_SCOPE : CREATE_SCOPE };
+    if (locationId) return { error: LEAVES_SCOPE };
+    const names = (creatableFieldIds(access, ctx.recordTypeId) ?? []).flatMap((id) => ctx.fields.find((field) => field.id === id)?.friendlyName ?? []);
+    return { error: createScopeMessage(names) };
   }
 
   try {
