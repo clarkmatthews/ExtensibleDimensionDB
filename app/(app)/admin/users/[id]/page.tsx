@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { OwnSettings, type OwnDimension, type OwnScreen } from "@/components/own-settings";
+import { ScopeAssignments } from "@/components/scope-assignments";
 import { saveUser, saveUserWorkflowSteps, setUserActive, signOutEverywhere } from "@/lib/access-actions";
 import { NAV_MODULES } from "@/lib/nav-modules";
 import { RIGHTS, type Level } from "@/lib/permission-labels";
@@ -36,7 +37,7 @@ export default async function UserPage({
   const canEditGroups = canEditModule(access, "ACCESS");
   const { id } = await params;
   const query = await searchParams;
-  const [account, groups, categories, processes] = await Promise.all([
+  const [account, groups, categories, processes, scopes, scopeGrants] = await Promise.all([
     prisma.user.findUnique({ where: { id }, include: { groups: true } }),
     prisma.group.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     prisma.category.findMany({
@@ -52,6 +53,8 @@ export default async function UserPage({
       // Notify steps notify a person directly; only action steps are assigned here.
       include: { steps: { where: { kind: "ACTION" }, orderBy: { sortOrder: "asc" }, include: { group: true, assigneeUser: true } } },
     }),
+    prisma.scope.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, isActive: true } }),
+    prisma.scopeAssignment.findMany({ select: { scopeId: true, subjectType: true, subjectId: true } }),
   ]);
   if (!account) notFound();
   const subject = await loadAccess(account);
@@ -94,7 +97,7 @@ export default async function UserPage({
   });
   const saved =
     query.saved === "sessions" ? "Signed out everywhere." :
-    query.saved === "account" ? "Account saved." : query.saved === "permissions" ? "Permissions saved." : query.saved === "workflows" ? "Workflow assignment saved." : "";
+    query.saved === "account" ? "Account saved." : query.saved === "permissions" ? "Permissions saved." : query.saved === "scopes" ? "Scopes saved." : query.saved === "workflows" ? "Workflow assignment saved." : "";
 
   return (
     <div className="space-y-6">
@@ -102,7 +105,7 @@ export default async function UserPage({
         <Link className="text-sm font-semibold text-pine" href="/admin/users">Users</Link>
         <h1 className="mt-1 flex items-center text-2xl font-semibold">
           {account.name}
-          <HelpTip text="Change this person's name, email, password, groups, own settings, and workflow assignments. An empty new password keeps the current one." />
+          <HelpTip text="Change this person's name, email, password, groups, scopes, own settings, and workflow assignments. An empty new password keeps the current one." />
         </h1>
         <p className="text-sm text-muted">{account.email}</p>
         {account.mustChangePassword && !account.isAdmin ? (
@@ -206,6 +209,20 @@ export default async function UserPage({
       </fieldset>
 
       {canSeeGroups ? <OwnSettings userId={account.id} isAdmin={account.isAdmin} canEdit={canEditGroups} screens={ownScreens} dimensions={ownDimensions} /> : null}
+      {canSeeGroups ? (
+        <div className="panel p-4">
+          <ScopeAssignments
+            subjectType="USER"
+            subjectId={account.id}
+            returnTo={`/admin/users/${account.id}`}
+            scopes={scopes}
+            assignedIds={scopeGrants.filter((row) => row.subjectType === "USER" && row.subjectId === account.id).map((row) => row.scopeId)}
+            inherited={scopes.filter((scope) => scopeGrants.some((row) => row.subjectType === "GROUP" && row.scopeId === scope.id && memberGroups.has(row.subjectId))).map((scope) => scope.name)}
+            canEdit={canEditGroups}
+            divider={false}
+          />
+        </div>
+      ) : null}
 
       <fieldset disabled={!canEdit} className="min-w-0 space-y-6 border-0 p-0">
       <form action={saveUserWorkflowSteps} className="panel space-y-3 p-4">

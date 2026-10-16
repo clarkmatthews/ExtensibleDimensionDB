@@ -44,7 +44,7 @@ export default async function StoresPage({
     activeField ? `v_${activeField.id}` in params : true,
     activeChecked,
   );
-  const matched = await loadStoreRows(fields, query, current.id);
+  const matched = await loadStoreRows(fields, query, current.id, access);
   const choices = columnChoices(matched, fields.map((field) => field.id));
   const rows = filterRows(matched, filters);
   const pageSize = 25;

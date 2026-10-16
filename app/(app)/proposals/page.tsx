@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { reviewProposal } from "@/lib/proposal-actions";
 import { currentValues, reviewBlocker, type ProposedChange } from "@/lib/proposals";
 import { recordLabels } from "@/lib/record-types";
+import { visibleProposals } from "@/lib/row-scope";
 import { getCurrentUser } from "@/lib/session";
 
 export const metadata = { title: "AI proposals" };
@@ -54,11 +55,12 @@ export default async function ProposalsPage({
     }),
     prisma.recordType.findMany({ select: { id: true, name: true } }),
   ]);
-  const labels = await recordLabels([...pending, ...reviewed].flatMap((row) => [row.locationId ?? "", row.appliedLocationId ?? ""]));
+  const [shownPending, shownReviewed] = await Promise.all([visibleProposals(access, pending), visibleProposals(access, reviewed)]);
+  const labels = await recordLabels([...shownPending, ...shownReviewed].flatMap((row) => [row.locationId ?? "", row.appliedLocationId ?? ""]));
   const typeName = (id: string) => types.find((type) => type.id === id)?.name ?? "record";
-  const nowValues = new Map(await Promise.all(pending.map(async (row) => [row.id, await currentValues(row)] as const)));
+  const nowValues = new Map(await Promise.all(shownPending.map(async (row) => [row.id, await currentValues(row, access)] as const)));
   // Approve all and Reject all cover the proposals listed here that this person may review.
-  const reviewable = canReview ? pending.filter((row) => !reviewBlocker(access, row)).map((row) => row.id) : [];
+  const reviewable = canReview ? shownPending.filter((row) => !reviewBlocker(access, row)).map((row) => row.id) : [];
   const bulk = bulkSummary(params);
 
   return (
@@ -77,10 +79,10 @@ export default async function ProposalsPage({
       {bulk ? <p className={`rounded-md px-3 py-2 text-sm ${bulk.problem ? "bg-amber-50 text-warn" : "bg-emerald-50 text-pine"}`} role="status">{bulk.text}</p> : null}
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Waiting for review{pending.length ? ` (${pending.length})` : ""}</h2>
-        {pending.length === 0 ? <p className="text-sm text-muted">Nothing is waiting.</p> : null}
-        {reviewable.length > 1 ? <BulkReview ids={reviewable} waiting={pending.length} /> : null}
-        {pending.map((proposal) => {
+        <h2 className="text-lg font-semibold">Waiting for review{shownPending.length ? ` (${shownPending.length})` : ""}</h2>
+        {shownPending.length === 0 ? <p className="text-sm text-muted">Nothing is waiting.</p> : null}
+        {reviewable.length > 1 ? <BulkReview ids={reviewable} waiting={shownPending.length} /> : null}
+        {shownPending.map((proposal) => {
           const changes = proposal.changes as unknown as ProposedChange[];
           const current = nowValues.get(proposal.id) ?? new Map<string, string>();
           const blocked = canReview ? reviewBlocker(access, proposal) : "You can view proposals. Edit access is required to review them.";
@@ -138,9 +140,9 @@ export default async function ProposalsPage({
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Recently reviewed</h2>
-        {reviewed.length === 0 ? <p className="text-sm text-muted">None yet.</p> : (
+        {shownReviewed.length === 0 ? <p className="text-sm text-muted">None yet.</p> : (
           <ul className="panel divide-y text-sm">
-            {reviewed.map((proposal) => {
+            {shownReviewed.map((proposal) => {
               const target = proposal.appliedLocationId ?? proposal.locationId;
               return (
                 <li key={proposal.id} className="px-4 py-2">

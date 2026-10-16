@@ -245,10 +245,13 @@ Permissions are assigned to **groups**. A person gets the combined permissions o
 
 - **Screens**: None, View, or Edit for each screen.
 - **Dimensions**: data access for the entire dimension (None, View, or Edit, which also covers attributes added later) or for specific attributes, plus the admin rights to add, hide, or edit attributes, edit the dimension, and assign its permissions.
+- **Scopes**: which named row limits apply to the group. Scopes are created on **Scopes**.
 
-A person in several groups gets the higher level and every right any of their groups gives.
+A person in several groups gets the higher level and every right any of their groups gives. Scopes from those groups are combined the same way: the person sees every row any of their scopes allows.
 
 Record types follow attribute access. A person sees a record type (its tab, list, records, archived records, exports, and AI answers) only when they can view at least one of its attributes; otherwise it is hidden and its records cannot be opened. Creating records of a type needs Edit on the Dimension screen and update access to at least one of its attributes, and the same right archives and restores them. Someone who is not an administrator can change a dimension's permissions only if they have **Assign permissions** on it.
+
+**Scopes** limit which records someone can see, on top of attribute access. With no scope, every row of a visible record type is available. A scope only narrows the record types it has rules for, so a scope of three locations does not hide vendors. A rule is either specific records, or an attribute that must equal one of a list of values. A link attribute can instead use the records from another rule in the same scope, so products follow the same locations. A person in several scopes sees the union of those rows. A group with no scope does not remove a limit from another group. Scopes assigned on a person's page are added to the scopes from their groups. Administrators are not limited. View and edit still come from attribute permissions: a scope decides the rows, and attributes decide what can be changed on them. A new record is allowed only when an attribute rule would include it. Share links and webhooks are not tied to a person, so they can still return rows that a given person cannot see.
 
 ![Groups](docs/screenshots/access.png)
 
@@ -256,7 +259,7 @@ Record types follow attribute access. A person sees a record type (its tab, list
 
 A password an administrator sets for someone who is not an administrator, whether on a new account or as a reset, is temporary: that person must choose their own the next time they sign in before they can do anything else. On upgrade, existing non-administrator accounts that have never signed in are treated the same way.
 
-**Users** creates accounts, marks administrators, and adds people to groups. A user's page changes their password, assigns workflow steps, lists the browsers they are signed in on with **Sign out everywhere**, and has **Own settings**: every screen, dimension, admin right, and attribute starts at **From groups**, which shows what their groups give now. Choosing None, View, Edit, Yes, or No makes an exception that overrides their groups for that one item, so you can also take a single attribute away from one person. Changing Own settings needs Edit on Groups.
+**Users** creates accounts, marks administrators, and adds people to groups. A user's page changes their password, assigns workflow steps, lists the browsers they are signed in on with **Sign out everywhere**, can add scopes for that person on top of their groups, and has **Own settings**: every screen, dimension, admin right, and attribute starts at **From groups**, which shows what their groups give now. Choosing None, View, Edit, Yes, or No makes an exception that overrides their groups for that one item, so you can also take a single attribute away from one person. Changing Own settings needs Edit on Groups.
 
 ![Users](docs/screenshots/users.png)
 

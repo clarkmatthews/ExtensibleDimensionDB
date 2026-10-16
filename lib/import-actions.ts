@@ -40,7 +40,7 @@ export async function uploadImport(formData: FormData) {
   const read = await readImportFile(file.name, new Uint8Array(await file.arrayBuffer()));
   if ("error" in read) redirect(`${PAGE}?error=${encodeURIComponent(read.error)}`);
   const csv = tableToCsv(read.table);
-  const summary = await previewImport(csv, await loadSaveContext(recordType.id), access);
+  const summary = await previewImport(csv, await loadSaveContext(recordType.id, access), access);
   const job = await prisma.importJob.create({
     data: {
       userId: user.id,
@@ -66,7 +66,7 @@ export async function applyImport(formData: FormData) {
     const claimed = await prisma.importJob.updateMany({ where: { id: job.id, status: "PREVIEWED" }, data: { status: "APPLYING" } });
     if (claimed.count === 0) redirect(`${PAGE}?job=${job.id}`);
 
-    const ctx = await loadSaveContext(job.recordTypeId);
+    const ctx = await loadSaveContext(job.recordTypeId, access);
     const preview = job.summary as unknown as ImportSummary;
     const result: ApplyResult = { created: 0, updated: 0, unchanged: 0, failed: [] };
     if (!preview?.fatal) {

@@ -1,7 +1,8 @@
 import type { StepKind, TaskPriority } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { groupMemberIds, notifyUsers, watcherIds } from "@/lib/notify";
-import { canSeeValue, loadAccessForUsers } from "@/lib/permissions";
+import { canSeeValue, loadAccess, loadAccessForUsers } from "@/lib/permissions";
+import { locationVisible } from "@/lib/row-scope";
 import { triggerMatches } from "@/lib/workflow-rules";
 
 const PRIORITY_UP: Record<TaskPriority, TaskPriority> = {
@@ -326,6 +327,7 @@ export async function applyTaskAction(input: {
     include: { groups: true },
   });
   if (!user) return "You are not signed in.";
+  if (!(await locationVisible(await loadAccess(user), task.locationId))) return "That action is no longer open.";
   const inGroup = user.groups.some((membership) => membership.groupId === task.assigneeGroupId);
   const assignedToMe = task.assigneeUserId === user.id || (!task.assigneeUserId && inGroup);
   if (!user.isAdmin && !assignedToMe && task.storeProcess.originatorId !== user.id) {

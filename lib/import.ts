@@ -1,6 +1,7 @@
 import { parseCsv, unguardCell } from "@/lib/csv";
 import type { AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { allowedIds, OUTSIDE_SCOPE } from "@/lib/row-scope";
 import {
   canUpdateField,
   choicesFor,
@@ -132,6 +133,7 @@ async function prepare(csv: string, ctx: SaveContext, access: AccessContext) {
 
   const identifiers = identifierColumn ? body.map((cells) => unguardCell(cells[identifierColumn.index] ?? "").trim()) : [];
   const existing = new Map<string, string>();
+  const allowed = await allowedIds(access, ctx.recordTypeId);
   if (identifierField && identifiers.some(Boolean)) {
     const rows = await prisma.fieldValue.findMany({
       where: {
@@ -157,6 +159,7 @@ async function prepare(csv: string, ctx: SaveContext, access: AccessContext) {
     }
     if (cells.length > headers.length) messages.push(`This row has ${cells.length} cells but the header has ${headers.length}.`);
     const locationId = label ? (existing.get(label) ?? "") : "";
+    if (locationId && allowed && !allowed.includes(locationId)) messages.push(OUTSIDE_SCOPE);
     const stored = locationId ? await storedText(locationId) : new Map<string, string>();
     const values = new Map<string, string>();
     for (const column of writable) {

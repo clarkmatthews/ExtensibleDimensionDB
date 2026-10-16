@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { GroupPermissionsForm, type GroupDimension } from "@/components/group-permissions-form";
+import { ScopeAssignments } from "@/components/scope-assignments";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { saveGroup, setGroupActive } from "@/lib/access-actions";
@@ -23,7 +24,7 @@ export default async function GroupsPage({
   if (!canViewModule(actorAccess, "ACCESS")) return <ModuleDenied />;
   const canEdit = canEditModule(actorAccess, "ACCESS");
   const params = await searchParams;
-  const [groups, categories, categoryGrants, fieldGrants, screenGrants] = await Promise.all([
+  const [groups, categories, categoryGrants, fieldGrants, screenGrants, scopes, scopeGrants] = await Promise.all([
     prisma.group.findMany({
       orderBy: { name: "asc" },
       include: { members: { include: { user: { select: { id: true, name: true, isActive: true } } } } },
@@ -36,6 +37,8 @@ export default async function GroupsPage({
     prisma.categoryPermission.findMany({ where: { subjectType: "GROUP" } }),
     prisma.fieldPermission.findMany({ where: { subjectType: "GROUP" } }),
     prisma.modulePermission.findMany({ where: { subjectType: "GROUP" } }),
+    prisma.scope.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, isActive: true } }),
+    prisma.scopeAssignment.findMany({ where: { subjectType: "GROUP" }, select: { scopeId: true, subjectId: true } }),
   ]);
 
   return (
@@ -43,15 +46,17 @@ export default async function GroupsPage({
       <div>
         <h1 className="flex items-center text-2xl font-semibold">
           Groups
-          <HelpTip text="Permissions are assigned to groups. Each group sets which screens its members can open and what they can see and change in each dimension. A person in several groups gets the combined access. A person's page can override single items for that person." />
+          <HelpTip text="Permissions are assigned to groups. Each group sets which screens its members can open and what they can see and change in each dimension. A scope on a group limits which records those members can see. A person in several groups gets the combined access. A person's page can override single items for that person." />
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-muted">
-          Permissions are assigned here. Each group sets its members&apos; screens and their access to each dimension; a person in several groups gets the combined access. To make an exception for one person, set it under Own settings on their page in{" "}
+          Permissions are assigned here. Each group sets its members&apos; screens and their access to each dimension; a person in several groups gets the combined access. Scopes, which limit rows, are created on{" "}
+          <Link className="font-semibold text-pine" href="/admin/scopes">Scopes</Link> and assigned on a group below. To make an exception for one person, set it under Own settings on their page in{" "}
           <Link className="font-semibold text-pine" href="/admin/users">Users</Link>, which is also where people join groups.
         </p>
       </div>
       {params.error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-danger">{params.error}</p> : null}
       {params.saved === "group" ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-pine">Group permissions saved.</p> : null}
+      {params.saved === "scopes" ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-pine">Scopes saved.</p> : null}
       {!canEdit ? <p className="text-sm text-muted">You can view groups. Edit access to Groups is required to change them.</p> : null}
       <fieldset disabled={!canEdit} className="min-w-0 space-y-3 border-0 p-0">
         <form action={saveGroup} className="panel grid gap-3 p-4 md:grid-cols-[1fr_1fr_auto]">
@@ -125,6 +130,15 @@ export default async function GroupsPage({
                     <span className="text-muted">none yet. Add people to the group on their page in Users.</span>
                   )}
                 </p>
+                <ScopeAssignments
+                  subjectType="GROUP"
+                  subjectId={group.id}
+                  returnTo={`/admin/access?open=${group.id}`}
+                  scopes={scopes}
+                  assignedIds={scopeGrants.filter((row) => row.subjectId === group.id).map((row) => row.scopeId)}
+                  inherited={[]}
+                  canEdit={canEdit}
+                />
                 <GroupPermissionsForm groupId={group.id} screens={screens} dimensions={dimensions} />
               </div>
             </details>

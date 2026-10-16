@@ -41,7 +41,7 @@ function typeExample(field: LoadedField) {
  * names; a name shared by two dimensions is written "Dimension: Name", which import also accepts.
  */
 export async function sampleTable(access: AccessContext, recordTypeId: string): Promise<Table> {
-  const ctx = await loadSaveContext(recordTypeId);
+  const ctx = await loadSaveContext(recordTypeId, access);
   const fields = ctx.fields.filter(
     (field) => field.dataType !== "FILE" && !field.isCreatedDate && (field.isStoreKey || canUpdateField(access, field)),
   );

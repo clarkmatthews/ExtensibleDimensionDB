@@ -14,6 +14,7 @@ import { loadFieldChoices } from "@/lib/list-items";
 import { WatchToggle } from "@/components/watch-toggle";
 import { ConfirmArchive } from "@/components/confirm-archive";
 import { restoreRecord, startWorkflow } from "@/lib/store-actions";
+import { filterVisibleIds, locationVisible } from "@/lib/row-scope";
 import { localDateInput, storedToInput } from "@/lib/values";
 
 export default async function StorePage({
@@ -35,6 +36,7 @@ export default async function StorePage({
   const ownType = typeRights.get(location.recordTypeId);
   // A record whose type shows this person no attributes is not theirs to open.
   if (!ownType?.canView) return <ModuleDenied />;
+  if (!(await locationVisible(access, location.id))) notFound();
   // Archiving and restoring need the same right as adding records of this type.
   const canArchive = ownType.canAdd;
   const [recordLabel, openWorkflows] = canArchive && location.isActive
@@ -62,6 +64,7 @@ export default async function StorePage({
       include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
       orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
     }),
+    access,
   );
   // Keep links to records that were archived since, so saving the form does not drop them.
   const staleIds = linked.flatMap((field) => {
@@ -70,14 +73,15 @@ export default async function StorePage({
     const stored = location.values.find((value) => value.fieldId === field.id)?.valueText ?? "";
     return stored.split("|").filter((id) => id && !known.has(id));
   });
-  const staleLabels = await recordLabels(staleIds);
+  const visibleStale = await filterVisibleIds(access, staleIds);
+  const staleLabels = await recordLabels([...visibleStale]);
   const fields = linked.map((field) => {
     if (field.dataType !== "RECORD_LINK") return field;
     const known = new Set(field.options.map((option) => option.value));
     const stored = (location.values.find((value) => value.fieldId === field.id)?.valueText ?? "").split("|").filter(Boolean);
     const extra = stored
       .filter((id) => !known.has(id))
-      .map((id, index) => ({ ...field.options[0], id: `stale-${id}`, fieldId: field.id, value: id, label: `${staleLabels.get(id) ?? id} (archived)`, parentValues: "", isDefault: false, sortOrder: -1 - index }));
+      .map((id, index) => ({ ...field.options[0], id: `stale-${id}`, fieldId: field.id, value: id, label: visibleStale.has(id) ? `${staleLabels.get(id) ?? id} (archived)` : id, parentValues: "", isDefault: false, sortOrder: -1 - index }));
     return extra.length ? { ...field, options: [...extra, ...field.options] } : field;
   });
   const choiceMeta = await loadFieldChoices(
@@ -142,7 +146,7 @@ export default async function StorePage({
   ]);
   const [allTypes, inbound, watchers] = await Promise.all([
     listRecordTypes(),
-    linkedFrom(location.id),
+    linkedFrom(location.id, access),
     prisma.recordWatch.findMany({ where: { locationId: location.id }, select: { userId: true } }),
   ]);
   const watching = watchers.some((row) => row.userId === user.id);

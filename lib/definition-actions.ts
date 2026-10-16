@@ -8,6 +8,7 @@ import { deleteCategoryGraph, deleteFieldGraph, deleteRecordTypeGraph, previewCa
 import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { canEditModule, canViewModule, categoryAccess, loadAccess } from "@/lib/permissions";
+import { allowedIds } from "@/lib/row-scope";
 import { buildStoreTargets } from "@/lib/store-targets";
 import { getCurrentUser } from "@/lib/session";
 import { choicesForList } from "@/lib/list-items";
@@ -397,7 +398,7 @@ export async function moveField(formData: FormData) {
 export async function loadStoreTargets(fieldId: string) {
   const { access } = await editor();
   if (!canViewModule(access, "DEFINITION")) return [];
-  return buildStoreTargets(fieldId);
+  return buildStoreTargets(fieldId, access);
 }
 
 export async function applyDefaultToStores(fieldId: string, locationIds: string[], raw: string) {
@@ -407,7 +408,7 @@ export async function applyDefaultToStores(fieldId: string, locationIds: string[
     if (blocked) return { error: blocked, applied: 0 };
     const loaded = await prisma.fieldDefinition.findUnique({ where: { id: fieldId }, include: { options: true, category: { select: { recordTypeId: true } } } });
     if (!loaded) return { error: "This attribute was not found.", applied: 0 };
-    const [field] = await withLinkOptions([loaded]);
+    const [field] = await withLinkOptions([loaded], access);
     if (field.isCreatedDate) return { error: `${field.friendlyName} is filled in when the dimension is added.`, applied: 0 };
     const rights = categoryAccess(access, field.categoryId);
     if (!user.isAdmin && !rights.canEditFields) return { error: "You cannot update this attribute.", applied: 0 };
@@ -434,8 +435,10 @@ export async function applyDefaultToStores(fieldId: string, locationIds: string[
 
     const ids = [...new Set(locationIds.filter(Boolean))];
     if (!ids.length) return { error: "Choose at least one dimension.", applied: 0 };
+    const allowed = await allowedIds(access, field.category.recordTypeId);
+    const visibleIds = allowed ? ids.filter((id) => allowed.includes(id)) : ids;
     const found = await prisma.location.findMany({
-      where: { id: { in: ids }, isActive: true, recordTypeId: field.category.recordTypeId },
+      where: { id: { in: visibleIds }, isActive: true, recordTypeId: field.category.recordTypeId },
       select: { id: true },
     });
     if (found.length !== ids.length) return { error: "One of the selected dimensions is no longer available.", applied: 0 };

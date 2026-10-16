@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { withLinkOptions } from "@/lib/record-types";
 import { categoryAccess, fieldAccess, type AccessContext } from "@/lib/permissions";
+import { allowedIds } from "@/lib/row-scope";
 import { storedToDisplay, storedToInput, type DefinedField } from "@/lib/values";
 
 /** The attributes of one record type that this person may view, with link choices loaded. */
@@ -11,6 +12,7 @@ export async function loadVisibleFields(access: AccessContext, recordTypeId: str
       include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
       orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
     }),
+    access,
   );
   return fields.filter((field) => {
     const category = categoryAccess(access, field.categoryId);
@@ -19,9 +21,10 @@ export async function loadVisibleFields(access: AccessContext, recordTypeId: str
   });
 }
 
-export async function loadStoreRows(fields: DefinedField[], query: string, recordTypeId: string) {
+export async function loadStoreRows(fields: DefinedField[], query: string, recordTypeId: string, access: AccessContext) {
+  const allowed = await allowedIds(access, recordTypeId);
   const locations = await prisma.location.findMany({
-    where: { isActive: true, recordTypeId },
+    where: { isActive: true, recordTypeId, ...(allowed ? { id: { in: allowed } } : {}) },
     include: { values: true },
     orderBy: { createdAt: "desc" },
   });

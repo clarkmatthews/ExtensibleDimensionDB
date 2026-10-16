@@ -37,6 +37,14 @@ enum SubjectType {
   USER
 }
 
+/// How a scope chooses rows of one record type.
+enum ScopeRuleKind {
+  /// These specific records.
+  RECORDS
+  /// Records whose attribute equals one of the listed values, or matches another rule's records.
+  ATTRIBUTE
+}
+
 enum GrantLevel {
   NONE
   VIEW
@@ -364,6 +372,7 @@ model RecordType {
   categories  Category[]
   records     Location[]
   linkFields  FieldDefinition[] @relation("LinkTarget")
+  scopeRules  ScopeRule[]
 }
 
 model Category {
@@ -430,6 +439,7 @@ model FieldDefinition {
   apiFields         ApiEndpointField[]
   changes           FieldChange[]
   triggerFields     WorkflowTriggerField[]
+  scopeRules        ScopeRule[]
 }
 
 model ChoiceList {
@@ -487,7 +497,8 @@ model Location {
   changes   FieldChange[]
   notifications Notification[]
   watchers  RecordWatch[]
-  files     StoredFile[]
+  files            StoredFile[]
+  scopeRuleRecords ScopeRuleRecord[]
 }
 
 /// A file uploaded to a FILE attribute, stored in the database. The attribute's value lists
@@ -587,6 +598,69 @@ model ModulePermission {
 
   @@unique([module, subjectType, subjectId])
   @@index([subjectType, subjectId])
+}
+
+/// A named set of row rules. Assigned to groups and people. A record type with no rule stays fully visible.
+model Scope {
+  id          String            @id @default(cuid())
+  name        String
+  description String            @default("")
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  assignments ScopeAssignment[]
+  rules       ScopeRule[]
+}
+
+/// Who a scope applies to. A person gets the union of scopes assigned to them and to their groups.
+model ScopeAssignment {
+  id          String      @id @default(cuid())
+  scopeId     String
+  scope       Scope       @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  subjectType SubjectType
+  subjectId   String
+
+  @@unique([scopeId, subjectType, subjectId])
+  @@index([subjectType, subjectId])
+}
+
+/// One way a scope chooses rows of a single record type. Several rules for the same type are combined.
+model ScopeRule {
+  id           String             @id @default(cuid())
+  scopeId      String
+  scope        Scope              @relation(fields: [scopeId], references: [id], onDelete: Cascade)
+  recordTypeId String
+  recordType   RecordType         @relation(fields: [recordTypeId], references: [id], onDelete: Cascade)
+  kind         ScopeRuleKind
+  /// ATTRIBUTE rules: the attribute to match. It must belong to this record type.
+  fieldId      String?
+  field        FieldDefinition?   @relation(fields: [fieldId], references: [id], onDelete: SetNull)
+  /// ATTRIBUTE rules: accepted values are the records of this RECORDS rule in the same scope.
+  sourceRuleId String?
+  sourceRule   ScopeRule?         @relation("ScopeRuleSource", fields: [sourceRuleId], references: [id], onDelete: SetNull)
+  derivedRules ScopeRule[]        @relation("ScopeRuleSource")
+  records      ScopeRuleRecord[]
+  values       ScopeRuleValue[]
+
+  @@index([scopeId, recordTypeId])
+}
+
+model ScopeRuleRecord {
+  ruleId     String
+  locationId String
+  rule       ScopeRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  location   Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@id([ruleId, locationId])
+  @@index([locationId])
+}
+
+model ScopeRuleValue {
+  id        String    @id @default(cuid())
+  ruleId    String
+  valueText String
+  rule      ScopeRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, valueText])
 }
 
 model WorkflowProcess {

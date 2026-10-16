@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { canViewModule, loadAccess } from "@/lib/permissions";
+import { locationConstraint } from "@/lib/row-scope";
 import { prisma } from "@/lib/prisma";
 import { taskAction } from "@/lib/store-actions";
 import { getCurrentUser } from "@/lib/session";
@@ -32,8 +33,10 @@ export default async function TaskReportPage({
   const from = params.from ? new Date(params.from) : null;
   const to = params.to ? new Date(`${params.to}T23:59:59`) : null;
   const includeAll = params.includeAll === "1";
+  const scope = await locationConstraint(access);
   const tasks = await prisma.task.findMany({
     where: {
+      ...(scope ? { storeProcess: { location: scope } } : {}),
       ...(from || to
         ? {
             createdAt: { lte: to ?? undefined },

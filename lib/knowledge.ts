@@ -4,6 +4,7 @@ import { canSeeValue, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { linkedFrom, recordLabels } from "@/lib/record-types";
 import { catchUpFileText, fileText, visibleFile } from "@/lib/file-access";
+import { filterVisibleIds, locationConstraint } from "@/lib/row-scope";
 import { parseFileTokens } from "@/lib/files";
 import { checkboxCheckedText, displayStored, type DefinedField } from "@/lib/values";
 
@@ -202,20 +203,23 @@ export function knowledgeCard(
   return lines.join("\n");
 }
 
-async function cardsFor(fields: LoadedField[], requestedIds: string[]) {
+async function cardsFor(ctx: AccessContext, fields: LoadedField[], requestedIds: string[]) {
   if (!requestedIds.length || !fields.length) return [];
+  const allowed = await filterVisibleIds(ctx, requestedIds);
+  const ids = requestedIds.filter((id) => allowed.has(id));
+  if (!ids.length) return [];
   // Archived records are not knowledge.
   const active = new Map(
     (
       await prisma.location.findMany({
-        where: { id: { in: requestedIds }, isActive: true },
+        where: { id: { in: ids }, isActive: true },
         select: { id: true, recordType: { select: { id: true, name: true } } },
       })
     ).map((row) => [row.id, row.recordType]),
   );
   // A record whose type has no attribute this person can view is not shown at all.
   const visibleTypes = new Set(fields.map((field) => field.category.recordType.id));
-  const locationIds = requestedIds.filter((id) => active.has(id) && visibleTypes.has(active.get(id)!.id));
+  const locationIds = ids.filter((id) => active.has(id) && visibleTypes.has(active.get(id)!.id));
   if (!locationIds.length) return [];
   const values = await prisma.fieldValue.findMany({
     where: { locationId: { in: locationIds }, fieldId: { in: fields.map((field) => field.id) } },
@@ -234,7 +238,7 @@ export async function exportKnowledgeMarkdown(ctx: AccessContext) {
         distinct: ["locationId"],
       })
     : [];
-  const cards = (await cardsFor(fields, rows.map((row) => row.locationId))).sort((left, right) => {
+  const cards = (await cardsFor(ctx, fields, rows.map((row) => row.locationId))).sort((left, right) => {
     const subject = (card: string) => card.split("\n").find((line) => line.startsWith("Subject: "))?.slice("Subject: ".length) ?? "";
     return subject(left).localeCompare(subject(right), undefined, { sensitivity: "base" }) || left.localeCompare(right);
   });
@@ -316,7 +320,7 @@ export async function searchRecords(
   const fileFieldIds = scoped.filter((field) => field.dataType === "FILE").map((field) => field.id);
   const fileHits = fileFieldIds.length ? await searchFileText(fileFieldIds, query) : [];
   const ids = [...new Set([...matches.map((row) => row.locationId), ...fileHits.map((hit) => hit.locationId)])].slice(0, SEARCH_LIMIT);
-  const cards = await cardsFor(allFields, ids);
+  const cards = await cardsFor(ctx, allFields, ids);
   if (!cards.length) return "No records match.";
   return cards
     .map((card) => {
@@ -397,19 +401,20 @@ export async function getRecord(ctx: AccessContext, id: string) {
   if (!location) return "No record with that id is visible.";
   const fields = await visibleFields(ctx);
   if (!fields.length) return "No record with that id is visible.";
-  const cards = await cardsFor(fields, [location.id]);
+  const cards = await cardsFor(ctx, fields, [location.id]);
   if (!cards[0]) return "No record with that id is visible.";
-  const inbound = (await linkedFrom(location.id)).filter((link) => canSeeValue(ctx, link.fieldId, link.categoryId));
-  if (!inbound.length) return cards[0];
+  const inbound = (await linkedFrom(location.id, ctx)).filter((link) => canSeeValue(ctx, link.fieldId, link.categoryId));
   const lines = inbound.map((link) => `${link.recordType} ${link.label} (record ${link.locationId}) via ${link.attribute}`);
+  if (!lines.length) return cards[0];
   return `${cards[0]}\nLinked from:\n${lines.map((line) => `- ${line}`).join("\n")}`;
 }
 
 export async function recentChanges(ctx: AccessContext, since: string) {
   const moment = new Date(since);
   if (Number.isNaN(moment.getTime())) return "since must be an ISO timestamp.";
+  const scope = await locationConstraint(ctx);
   const rows = await prisma.fieldChange.findMany({
-    where: { createdAt: { gte: moment } },
+    where: { createdAt: { gte: moment }, ...(scope ? { location: scope } : {}) },
     include: { field: { include: { category: true } }, user: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
     take: CHANGE_LIMIT,

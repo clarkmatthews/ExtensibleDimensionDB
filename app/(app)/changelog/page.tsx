@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { canSeeValue, canViewModule, loadAccess } from "@/lib/permissions";
+import { filterVisibleIds, locationConstraint } from "@/lib/row-scope";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
@@ -32,13 +33,16 @@ export default async function ChangelogPage({
       where: { field: { isStoreKey: true }, valueText: { contains: record, mode: "insensitive" } },
       select: { locationId: true },
     });
-    locationIds = keys.map((row) => row.locationId);
+    const matched = await filterVisibleIds(access, keys.map((row) => row.locationId));
+    locationIds = [...matched];
   }
+  const scope = await locationConstraint(access);
   const query = params.q?.trim() ?? "";
   const rows = locationIds && locationIds.length === 0
     ? []
     : await prisma.fieldChange.findMany({
         where: {
+          ...(scope ? { location: scope } : {}),
           ...(locationIds ? { locationId: { in: locationIds } } : {}),
           ...(params.field ? { fieldId: params.field } : {}),
           ...(params.user ? { userId: params.user } : {}),

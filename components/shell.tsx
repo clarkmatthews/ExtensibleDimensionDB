@@ -24,6 +24,14 @@ function visibleItems(allowed: Set<string>): NavItem[] {
     if (previous?.kind === "group" && previous.label === moduleItem.group) previous.children.push(link);
     else items.push({ kind: "group", label: moduleItem.group, children: [link] });
   }
+  if (allowed.has("ACCESS")) {
+    for (const item of items) {
+      if (item.kind === "group" && item.label === "People Config") {
+        const at = item.children.findIndex((child) => child.href === "/admin/access");
+        item.children.splice(at + 1, 0, { href: "/admin/scopes", label: "Scopes" });
+      }
+    }
+  }
   return items;
 }
 

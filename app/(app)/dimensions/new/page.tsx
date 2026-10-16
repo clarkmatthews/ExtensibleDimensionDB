@@ -27,6 +27,7 @@ export default async function NewStorePage({ searchParams }: { searchParams: Pro
       include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
       orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
     }),
+    access,
   );
   const choiceMeta = await loadFieldChoices(
     fields.map((field) => ({ id: field.id, choiceListId: field.choiceListId, parentFieldId: field.parentFieldId })),

@@ -1,6 +1,7 @@
 import { canEditModule, canSeeValue, canViewModule, type AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { recordLabels } from "@/lib/record-types";
+import { locationConstraint, visibleProposals } from "@/lib/row-scope";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -157,33 +158,41 @@ export async function loadDashboardActivity(input: {
   const canSeeRecords = canViewModule(access, "STORES");
   const canSee = (row: ChangeRow) => canSeeValue(access, row.fieldId, row.categoryId);
   const reviewsProposals = canEditModule(access, "PROPOSALS");
+  const scope = await locationConstraint(access);
+  const activeLocation = { isActive: true, ...(scope ?? {}) };
 
-  const [myRecent, myDates, completed, watches, pendingProposals, reviewed] = await Promise.all([
+  const [myRecent, myDates, completed, watches, pendingRows, reviewed] = await Promise.all([
     canSeeRecords
       ? prisma.fieldChange.findMany({
-          where: { userId, createdAt: { gte: new Date(now - 14 * DAY) }, location: { isActive: true } },
+          where: { userId, createdAt: { gte: new Date(now - 14 * DAY) }, location: activeLocation },
           include: changeInclude,
           orderBy: { createdAt: "desc" },
           take: 300,
         })
       : Promise.resolve([]),
-    prisma.fieldChange.findMany({ where: { userId, createdAt: { gte: month } }, select: { createdAt: true, locationId: true } }),
+    prisma.fieldChange.findMany({
+      where: { userId, createdAt: { gte: month }, ...(scope ? { location: scope } : {}) },
+      select: { createdAt: true, locationId: true },
+    }),
     prisma.taskEvent.count({ where: { userId, action: "DONE", createdAt: { gte: week } } }),
-    canSeeRecords ? prisma.recordWatch.findMany({ where: { userId, location: { isActive: true } }, select: { locationId: true } }) : Promise.resolve([]),
+    canSeeRecords ? prisma.recordWatch.findMany({ where: { userId, location: activeLocation }, select: { locationId: true } }) : Promise.resolve([]),
     reviewsProposals
-      ? prisma.changeProposal.count({
+      ? prisma.changeProposal.findMany({
           where: { status: "PENDING", ...(access.user.isAdmin ? {} : { proposedById: { not: userId } }) },
+          select: { locationId: true, recordTypeId: true, changes: true },
         })
-      : Promise.resolve(0),
+      : Promise.resolve([]),
     // Reviews of this person's proposals since their last visit: shown once, then they drop off.
     prisma.changeProposal.findMany({
       where: { proposedById: userId, status: { in: ["APPLIED", "REJECTED", "FAILED"] }, reviewedAt: { gt: since ?? week } },
-      select: { status: true, reviewedAt: true, reviewer: { select: { name: true } } },
+      select: { status: true, reviewedAt: true, locationId: true, recordTypeId: true, changes: true, reviewer: { select: { name: true } } },
       orderBy: { reviewedAt: "desc" },
       take: 500,
     }),
   ]);
 
+  const pendingProposals = (await visibleProposals(access, pendingRows)).length;
+  const visibleReviewed = await visibleProposals(access, reviewed);
   const watchedIds = watches.map((row) => row.locationId);
   const othersChanges = watchedIds.length
     ? await prisma.fieldChange.findMany({
@@ -212,7 +221,7 @@ export async function loadDashboardActivity(input: {
       overdue,
       dueSoon,
       pendingProposals,
-      reviewedProposals: summarizeReviews(reviewed.map((row) => ({ status: row.status, reviewer: row.reviewer?.name ?? "", reviewedAt: row.reviewedAt! }))),
+      reviewedProposals: summarizeReviews(visibleReviewed.map((row) => ({ status: row.status, reviewer: row.reviewer?.name ?? "", reviewedAt: row.reviewedAt! }))),
       watchedChanged: watched.filter((group) => group.isNew).length,
     },
     watched,

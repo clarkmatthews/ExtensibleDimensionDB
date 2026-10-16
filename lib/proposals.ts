@@ -13,6 +13,7 @@ import {
   type LoadedField,
 } from "@/lib/record-save";
 import { recordLabels } from "@/lib/record-types";
+import { CREATE_SCOPE, LEAVES_SCOPE, locationVisible, staysInScope } from "@/lib/row-scope";
 import { displayRaw, displayStored } from "@/lib/values";
 import { enqueueRecordEvent } from "@/lib/webhooks";
 import { runWorkflows } from "@/lib/workflow";
@@ -72,7 +73,7 @@ export async function createProposal(input: ProposalInput): Promise<{ ok: boolea
   let recordTypeId = "";
   if (input.recordId?.trim()) {
     const location = await prisma.location.findUnique({ where: { id: input.recordId.trim() }, select: { id: true, isActive: true, recordTypeId: true } });
-    if (!location || !location.isActive) return { ok: false, message: "No active record with that id." };
+    if (!location || !location.isActive || !(await locationVisible(access, location.id))) return { ok: false, message: "No active record with that id." };
     locationId = location.id;
     recordTypeId = location.recordTypeId;
   } else {
@@ -83,7 +84,7 @@ export async function createProposal(input: ProposalInput): Promise<{ ok: boolea
     recordTypeId = type.id;
   }
 
-  const ctx = await loadSaveContext(recordTypeId);
+  const ctx = await loadSaveContext(recordTypeId, access);
   const stored = await storedInputs(locationId);
   const inputs = new Map<string, string>();
   const errors: string[] = [];
@@ -110,6 +111,11 @@ export async function createProposal(input: ProposalInput): Promise<{ ok: boolea
 
   const plan = await planSave(ctx, access, locationId, (field) => inputs.get(field.id), stored);
   if (!plan.ok) return { ok: false, message: `The change was not submitted: ${plan.errors.join(" ")}` };
+  const resulting = new Map(stored);
+  for (const write of plan.writes) resulting.set(write.field.id, write.raw);
+  if (!staysInScope(access, recordTypeId, locationId || null, resulting)) {
+    return { ok: false, message: locationId ? LEAVES_SCOPE : CREATE_SCOPE };
+  }
 
   const changes = await describeChanges(locationId, plan.writes.filter((write) => inputs.has(write.field.id)));
   if (!changes.length) return { ok: false, message: "Nothing would change: the record already has these values." };
@@ -177,7 +183,7 @@ export async function approveProposal(proposalId: string, reviewer: AccessContex
     return error;
   };
   const changes = proposal.changes as unknown as ProposedChange[];
-  const ctx = await loadSaveContext(proposal.recordTypeId);
+  const ctx = await loadSaveContext(proposal.recordTypeId, reviewer);
   for (const change of changes) {
     const field = ctx.fields.find((item) => item.id === change.fieldId);
     if (!field) return fail(`${change.name} no longer exists or is hidden.`);
@@ -229,9 +235,9 @@ export async function rejectProposal(proposalId: string, reviewer: AccessContext
 }
 
 /** Current display values for the attributes in a proposal, to show what changed since. */
-export async function currentValues(proposal: { locationId: string | null; recordTypeId: string; changes: unknown }) {
+export async function currentValues(proposal: { locationId: string | null; recordTypeId: string; changes: unknown }, access?: AccessContext) {
   if (!proposal.locationId) return new Map<string, string>();
-  const ctx = await loadSaveContext(proposal.recordTypeId);
+  const ctx = await loadSaveContext(proposal.recordTypeId, access);
   const values = await prisma.fieldValue.findMany({ where: { locationId: proposal.locationId } });
   const stored = await storedInputs(proposal.locationId);
   const result = new Map<string, string>();

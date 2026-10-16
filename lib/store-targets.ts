@@ -1,5 +1,7 @@
+import type { AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { recordLabels, withLinkOptions } from "@/lib/record-types";
+import { allowedIds } from "@/lib/row-scope";
 import { storedToDisplay, type DefinedField } from "@/lib/values";
 
 export type StoreNode = {
@@ -10,18 +12,19 @@ export type StoreNode = {
   children: StoreNode[];
 };
 
-export async function buildStoreTargets(fieldId: string): Promise<StoreNode[]> {
+export async function buildStoreTargets(fieldId: string, access?: AccessContext): Promise<StoreNode[]> {
   const loaded = await prisma.fieldDefinition.findUnique({ where: { id: fieldId }, include: { options: true, category: true } });
   if (!loaded) return [];
   const recordTypeId = loaded.category.recordTypeId;
+  const allowed = access ? await allowedIds(access, recordTypeId) : null;
   const [[field], labelFields, locations] = await Promise.all([
-    withLinkOptions([loaded]),
+    withLinkOptions([loaded], access),
     prisma.fieldDefinition.findMany({
       where: { key: { in: ["name", "state", "city"] }, category: { recordTypeId } },
       include: { options: true },
     }),
     prisma.location.findMany({
-      where: { isActive: true, recordTypeId },
+      where: { isActive: true, recordTypeId, ...(allowed ? { id: { in: allowed } } : {}) },
       include: { values: true },
       orderBy: { createdAt: "asc" },
     }),

@@ -1,6 +1,7 @@
 import { canEditModule, canSeeValue, canViewModule, fieldAccess, type AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { listRecordTypes } from "@/lib/record-types";
+import { locationVisible } from "@/lib/row-scope";
 
 /**
  * What a person can do with the records of one type.
@@ -55,8 +56,9 @@ export async function resolveVisibleRecordType(access: AccessContext, requested?
   return { all, types, current, rights: (current && rights.get(current.id)) || NONE, rightsByType: rights };
 }
 
-/** Rights for the record type of one record, or null when the record does not exist. */
+/** Rights for one record, or null when it does not exist or is outside this person's scope. */
 export async function rightsForRecord(access: AccessContext, locationId: string) {
   const location = await prisma.location.findUnique({ where: { id: locationId }, select: { recordTypeId: true } });
-  return location ? rightsForType(access, location.recordTypeId) : null;
+  if (!location || !(await locationVisible(access, locationId))) return null;
+  return rightsForType(access, location.recordTypeId);
 }

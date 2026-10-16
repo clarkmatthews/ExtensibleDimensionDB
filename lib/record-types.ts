@@ -1,5 +1,6 @@
 import type { FieldOption } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { allowedIds, filterVisibleIds, type ScopeAccess } from "@/lib/row-scope";
 
 /** Active record types in display order. */
 export async function listRecordTypes() {
@@ -28,10 +29,11 @@ export async function recordLabels(locationIds: string[]) {
   return labels;
 }
 
-/** The choices for a link attribute: every active record of the target type, by label. */
-export async function linkChoices(linkTypeId: string) {
+/** The choices for a link attribute: active records of the target type this person may see, by label. */
+export async function linkChoices(linkTypeId: string, access?: ScopeAccess) {
+  const allowed = access ? await allowedIds(access, linkTypeId) : null;
   const records = await prisma.location.findMany({
-    where: { recordTypeId: linkTypeId, isActive: true },
+    where: { recordTypeId: linkTypeId, isActive: true, ...(allowed ? { id: { in: allowed } } : {}) },
     select: { id: true },
     orderBy: { createdAt: "asc" },
   });
@@ -47,10 +49,10 @@ type WithOptions = { id: string; dataType: string; linkTypeId: string | null; op
  * Gives link attributes their choices in `options`, the same place list attributes keep
  * theirs, so display, validation, export, and AI knowledge show record labels, not ids.
  */
-export async function withLinkOptions<T extends WithOptions>(fields: T[]): Promise<T[]> {
+export async function withLinkOptions<T extends WithOptions>(fields: T[], access?: ScopeAccess): Promise<T[]> {
   const targets = [...new Set(fields.filter((field) => field.dataType === "RECORD_LINK" && field.linkTypeId).map((field) => field.linkTypeId!))];
   if (!targets.length) return fields;
-  const choices = new Map(await Promise.all(targets.map(async (typeId) => [typeId, await linkChoices(typeId)] as const)));
+  const choices = new Map(await Promise.all(targets.map(async (typeId) => [typeId, await linkChoices(typeId, access)] as const)));
   return fields.map((field) => {
     if (field.dataType !== "RECORD_LINK" || !field.linkTypeId) return field;
     const options: FieldOption[] = (choices.get(field.linkTypeId) ?? []).map((choice, index) => ({
@@ -66,8 +68,8 @@ export async function withLinkOptions<T extends WithOptions>(fields: T[]): Promi
   });
 }
 
-/** Records that link to this one, grouped by the link attribute. */
-export async function linkedFrom(locationId: string) {
+/** Records that link to this one, grouped by the link attribute. Hidden rows are left out when access is set. */
+export async function linkedFrom(locationId: string, access?: ScopeAccess) {
   const values = await prisma.fieldValue.findMany({
     where: {
       field: { dataType: "RECORD_LINK", isActive: true },
@@ -81,8 +83,10 @@ export async function linkedFrom(locationId: string) {
     },
     include: { field: { include: { category: { include: { recordType: true } } } } },
   });
-  const labels = await recordLabels(values.map((value) => value.locationId));
-  return values.map((value) => ({
+  const visible = access ? await filterVisibleIds(access, values.map((value) => value.locationId)) : null;
+  const shown = visible ? values.filter((value) => visible.has(value.locationId)) : values;
+  const labels = await recordLabels(shown.map((value) => value.locationId));
+  return shown.map((value) => ({
     locationId: value.locationId,
     label: labels.get(value.locationId) ?? value.locationId,
     fieldId: value.fieldId,

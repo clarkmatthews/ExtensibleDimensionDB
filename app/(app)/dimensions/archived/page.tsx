@@ -5,6 +5,7 @@ import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { canViewModule, loadAccess } from "@/lib/permissions";
 import { recordTypeRights } from "@/lib/record-access";
+import { locationConstraint } from "@/lib/row-scope";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { restoreRecord } from "@/lib/store-actions";
@@ -18,9 +19,10 @@ export default async function ArchivedRecordsPage() {
   if (!canViewModule(access, "STORES")) return <ModuleDenied />;
   const typeRights = await recordTypeRights(access);
   const visibleTypes = [...typeRights].filter(([, rights]) => rights.canView).map(([id]) => id);
+  const scope = await locationConstraint(access);
   const records = await prisma.location.findMany({
-    // Only record types this person can see.
-    where: { isActive: false, recordTypeId: { in: visibleTypes } },
+    // Only record types this person can see, and only rows their scopes allow.
+    where: { isActive: false, recordTypeId: { in: visibleTypes }, ...(scope ?? {}) },
     orderBy: { archivedAt: "desc" },
     take: 500,
     include: {

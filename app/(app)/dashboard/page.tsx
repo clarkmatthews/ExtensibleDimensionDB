@@ -5,6 +5,7 @@ import { HelpTip } from "@/components/help-tip";
 import { ModuleDenied } from "@/components/module-denied";
 import { loadDashboardActivity, timeAgo, type RecordActivity } from "@/lib/activity";
 import { canEditModule, canSeeValue, canViewModule, firstModuleHref, loadAccess } from "@/lib/permissions";
+import { filterVisibleIds, locationConstraint } from "@/lib/row-scope";
 import { taskAction } from "@/lib/store-actions";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -33,13 +34,24 @@ export default async function DashboardPage({
   }
   const canEdit = canEditModule(access, "INBOX");
   const params = await searchParams;
-  const recent = await prisma.notification.findMany({
+  const scope = await locationConstraint(access);
+  const recentAll = await prisma.notification.findMany({
     // Change notices, and notices about a record (a notify step, a record created).
     where: { userId: user.id, OR: [{ fieldChangeId: { not: null } }, { locationId: { not: null } }] },
     include: { fieldChange: { include: { field: true, user: true } } },
     orderBy: { createdAt: "desc" },
-    take: 12,
+    take: 40,
   });
+  const recentIds = await filterVisibleIds(
+    access,
+    recentAll.flatMap((notice) => [notice.locationId, notice.fieldChange?.locationId].filter((id): id is string => Boolean(id))),
+  );
+  const recent = recentAll
+    .filter((notice) => {
+      const id = notice.locationId ?? notice.fieldChange?.locationId;
+      return !id || recentIds.has(id);
+    })
+    .slice(0, 12);
   await prisma.notification.updateMany({
     where: { userId: user.id, readAt: null },
     data: { readAt: new Date() },
@@ -49,7 +61,7 @@ export default async function DashboardPage({
     where: {
       completedAt: null,
       state: { in: ["UNACCEPTED", "ACCEPTED"] },
-      storeProcess: { suspended: false, status: "ACTIVE" },
+      storeProcess: { suspended: false, status: "ACTIVE", ...(scope ? { location: scope } : {}) },
       OR: [
         { assigneeUserId: user.id },
         { assigneeUserId: null, assigneeGroupId: { in: groupIds } },

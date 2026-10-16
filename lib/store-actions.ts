@@ -38,7 +38,7 @@ export async function saveStore(formData: FormData) {
     const values = formData.getAll(`field:${field.id}`).map(String);
     return field.multiple ? values.filter(Boolean).join("|") : (values[0] ?? "");
   };
-  const ctx = await loadSaveContext(recordTypeId);
+  const ctx = await loadSaveContext(recordTypeId, access);
   const stored = locationId ? await storedInputs(locationId) : new Map<string, string>();
   const uploaded = await storeUploads(formData, ctx.fields.filter((field) => field.dataType === "FILE" && canUpdateField(access, field)), user.id);
   if ("error" in uploaded) return { error: uploaded.error };

@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     activeField ? request.nextUrl.searchParams.has(`v_${activeField.id}`) : true,
     activeField ? checkboxCheckedText(activeField) : "Yes",
   );
-  const rows = filterRows(await loadStoreRows(fields, query, current.id), filters);
+  const rows = filterRows(await loadStoreRows(fields, query, current.id, access), filters);
   // Display names as headers; a name used in two dimensions becomes "Dimension: Name", which import also reads.
   const counts = new Map<string, number>();
   for (const field of fields) counts.set(field.friendlyName.toLowerCase(), (counts.get(field.friendlyName.toLowerCase()) ?? 0) + 1);

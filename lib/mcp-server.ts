@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getRecord, readFile, recentChanges, schemaCatalog, schemaText, searchRecords } from "@/lib/knowledge";
+import { visibleProposals } from "@/lib/row-scope";
 import type { AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createProposal } from "@/lib/proposals";
@@ -116,12 +117,15 @@ export function createKnowledgeServer(access: AccessContext, options: { canPropo
       annotations: { readOnlyHint: true },
     },
     async () => {
-      const rows = await prisma.changeProposal.findMany({
-        where: { proposedById: access.user.id },
-        orderBy: { createdAt: "desc" },
-        take: 20,
-        include: { reviewer: { select: { name: true } } },
-      });
+      const rows = await visibleProposals(
+        access,
+        await prisma.changeProposal.findMany({
+          where: { proposedById: access.user.id },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          include: { reviewer: { select: { name: true } } },
+        }),
+      );
       if (!rows.length) return text("No proposals yet.");
       return text(
         rows

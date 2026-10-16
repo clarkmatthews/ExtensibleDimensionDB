@@ -1,6 +1,7 @@
 import type { CategoryPermission, FieldPermission, GrantLevel, ModulePermission, SubjectType, User } from "@prisma/client";
 import { NAV_MODULES, type NavModuleId } from "@/lib/nav-modules";
 import { prisma } from "@/lib/prisma";
+import { loadRowScope, type RowScopeData } from "@/lib/row-scope";
 
 export type CategoryAccess = {
   canAddFields: boolean;
@@ -48,6 +49,8 @@ export type AccessContext = {
   categoryPerms: CategoryPermission[];
   fieldPerms: FieldPermission[];
   modulePerms: ModulePermission[];
+  /** Row rules for this request. Missing means no scopes exist, so every row is visible. */
+  rowScope?: RowScopeData;
 };
 
 /**
@@ -70,12 +73,13 @@ export function groupTiersFor(ctx: Pick<AccessContext, "groupIds">): Tier[] {
 
 export async function loadAccess(user: AccessUser): Promise<AccessContext> {
   const groupIds = user.groups.map((membership) => membership.groupId);
-  const [categoryPerms, fieldPerms, modulePerms] = await Promise.all([
+  const [categoryPerms, fieldPerms, modulePerms, rowScope] = await Promise.all([
     prisma.categoryPermission.findMany(),
     prisma.fieldPermission.findMany(),
     prisma.modulePermission.findMany(),
+    loadRowScope(),
   ]);
-  return { user, groupIds, categoryPerms, fieldPerms, modulePerms };
+  return { user, groupIds, categoryPerms, fieldPerms, modulePerms, rowScope };
 }
 
 function strongestLevel(rows: { grantLevel: GrantLevel }[]): GrantLevel {
@@ -218,7 +222,7 @@ export async function loadAccessForUsers(userIds: string[]): Promise<Map<string,
   const unique = [...new Set(userIds)].filter(Boolean);
   const result = new Map<string, AccessContext>();
   if (!unique.length) return result;
-  const [users, categoryPerms, fieldPerms, modulePerms] = await Promise.all([
+  const [users, categoryPerms, fieldPerms, modulePerms, rowScope] = await Promise.all([
     prisma.user.findMany({
       where: { id: { in: unique }, isActive: true },
       include: { groups: true },
@@ -226,10 +230,11 @@ export async function loadAccessForUsers(userIds: string[]): Promise<Map<string,
     prisma.categoryPermission.findMany(),
     prisma.fieldPermission.findMany(),
     prisma.modulePermission.findMany(),
+    loadRowScope(),
   ]);
   for (const user of users) {
     const groupIds = user.groups.map((membership) => membership.groupId);
-    result.set(user.id, { user, groupIds, categoryPerms, fieldPerms, modulePerms });
+    result.set(user.id, { user, groupIds, categoryPerms, fieldPerms, modulePerms, rowScope });
   }
   return result;
 }

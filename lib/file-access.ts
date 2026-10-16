@@ -2,6 +2,7 @@ import { extractFileText } from "@/lib/file-text";
 import { parseFileTokens } from "@/lib/files";
 import { canSeeValue, type AccessContext } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { locationVisible } from "@/lib/row-scope";
 
 /**
  * A stored file this person may open: it is attached to a record, still listed in that record's
@@ -21,6 +22,7 @@ export async function visibleFile(access: AccessContext, id: string, options: { 
     },
   });
   if (!file?.locationId || !canSeeValue(access, file.fieldId, file.field.categoryId)) return null;
+  if (!(await locationVisible(access, file.locationId))) return null;
   if (options.activeOnly && !file.location?.isActive) return null;
   const value = await prisma.fieldValue.findUnique({
     where: { locationId_fieldId: { locationId: file.locationId, fieldId: file.fieldId } },

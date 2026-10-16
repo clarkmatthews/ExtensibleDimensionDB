@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { withLinkOptions } from "@/lib/record-types";
 import { parseFileTokens } from "@/lib/files";
 import { validateValue, type Choice } from "@/lib/validators";
+import { CREATE_SCOPE, LEAVES_SCOPE, locationVisible, staysInScope } from "@/lib/row-scope";
 import { defaultInput, displayRaw, displayStored, inputToStored, localDateInput, rulesFromField, type DefinedField } from "@/lib/values";
 import type { SavedChange } from "@/lib/workflow";
 
@@ -65,13 +66,14 @@ export async function identifierTaken(db: ValueReader, fieldId: string, value: s
  * Loads one record type's active attributes and list metadata once, so a batch of saves
  * can share them. Link attributes get the target records as their options.
  */
-export async function loadSaveContext(recordTypeId: string): Promise<SaveContext> {
+export async function loadSaveContext(recordTypeId: string, access?: AccessContext): Promise<SaveContext> {
   const fields = await withLinkOptions(
     await prisma.fieldDefinition.findMany({
       where: { isActive: true, category: { isActive: true, recordTypeId } },
       include: { options: { orderBy: { sortOrder: "asc" } }, category: true },
       orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }],
     }),
+    access,
   );
   const listIds = [...new Set(fields.map((field) => field.choiceListId).filter((id): id is string => Boolean(id)))];
   const listRows = listIds.length
@@ -201,9 +203,16 @@ export async function saveRecord(input: {
     if (!existing) return { error: "This record no longer exists." };
     if (existing.recordTypeId !== ctx.recordTypeId) return { error: "This record belongs to a different record type." };
     if (!existing.isActive) return { error: "This record is archived. Restore it before editing." };
+    if (!(await locationVisible(access, locationId))) return { error: "This record no longer exists." };
   }
-  const plan = await planSave(ctx, access, locationId, input.values, await storedInputs(locationId), input.parentValues ?? input.values);
+  const stored = await storedInputs(locationId);
+  const plan = await planSave(ctx, access, locationId, input.values, stored, input.parentValues ?? input.values);
   if (!plan.ok) return { error: plan.error };
+  const resulting = new Map(stored);
+  for (const write of plan.writes) resulting.set(write.field.id, write.raw);
+  if (!staysInScope(access, ctx.recordTypeId, locationId || null, resulting)) {
+    return { error: locationId ? LEAVES_SCOPE : CREATE_SCOPE };
+  }
 
   try {
     return await prisma.$transaction(async (tx) => {
