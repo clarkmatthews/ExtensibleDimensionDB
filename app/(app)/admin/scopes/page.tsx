@@ -189,6 +189,7 @@ export default async function ScopesPage({
                           <summary className="cursor-pointer text-sm font-semibold text-pine">Edit rule</summary>
                           <div className="mt-2">
                             <ScopeRuleForm
+                              key={`${rule.id}:${rule.kind}:${rule.fieldId ?? ""}:${rule.sourceRuleId ?? ""}:${rule.records.map((row) => row.locationId).join(",")}:${rule.values.map((row) => row.valueText).join(",")}`}
                               scopeId={scope.id}
                               types={types}
                               fields={fields}
@@ -213,7 +214,8 @@ export default async function ScopesPage({
                 {canEdit ? (
                   <div>
                     <h3 className="mb-2 text-sm font-semibold">Add a rule</h3>
-                    <ScopeRuleForm scopeId={scope.id} types={types} fields={fields} recordRules={recordRules} />
+                    {/* Keyed by the rules, so the form starts empty again after a rule is added. */}
+                    <ScopeRuleForm key={`add-${scope.rules.map((rule) => rule.id).join(",")}`} scopeId={scope.id} types={types} fields={fields} recordRules={recordRules} />
                   </div>
                 ) : null}
               </div>

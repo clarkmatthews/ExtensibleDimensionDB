@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition, type FormEvent } from "react";
 import { DefaultStoreDialog } from "@/components/default-store-dialog";
 import { HelpTip } from "@/components/help-tip";
 import type { ListItem, ListPeer } from "@/components/list-config-dialog";
@@ -109,6 +109,7 @@ export function FieldForm({
   const [askStores, setAskStores] = useState(false);
   const [pendingDefault, setPendingDefault] = useState(initial?.defaultValue ?? "");
   const formRef = useRef<HTMLFormElement>(null);
+  const [saving, startSaving] = useTransition();
   const promptedDefault = useRef(initial?.defaultValue ?? "");
   const resumeSave = useRef(false);
   const opening = useRef(false);
@@ -147,6 +148,14 @@ export function FieldForm({
     setError(result?.error ?? "");
   }
 
+  // Submitted by hand rather than through a form action, because React resets a form after its
+  // action finishes, which put the inputs back to the definition as it was before the save.
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startSaving(() => onSubmit(formData));
+  }
+
   const showLength = draft.dataType === "TEXT" || draft.dataType === "BIG_TEXT" || draft.dataType === "ADDRESS";
   const showNumeric = draft.dataType === "NUMERIC";
   const isFile = draft.dataType === "FILE";
@@ -162,7 +171,7 @@ export function FieldForm({
         <span className="text-xs text-muted">{open ? "Hide" : "Edit"}</span>
       </button>
       {open ? (
-        <form ref={formRef} action={onSubmit} className="grid gap-3 px-4 pb-4 md:grid-cols-2">
+        <form ref={formRef} onSubmit={handleSubmit} className="grid gap-3 px-4 pb-4 md:grid-cols-2">
           <input type="hidden" name="id" value={draft.id} />
           <input type="hidden" name="categoryId" value={categoryId} />
           <input type="hidden" name="choiceSource" value={draft.choiceSource} />
@@ -428,8 +437,8 @@ export function FieldForm({
             </div>
           ) : null}
           <div className="md:col-span-2">
-            <button className="btn" type="submit">
-              Save attribute
+            <button className="btn" type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save attribute"}
             </button>
           </div>
         </form>
