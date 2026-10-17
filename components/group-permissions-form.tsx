@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { HelpTip } from "@/components/help-tip";
 import { saveGroupPermissions } from "@/lib/access-actions";
 import { RIGHTS, type Level, type RightKey } from "@/lib/permission-labels";
@@ -31,8 +31,17 @@ export function GroupPermissionsForm({
     Object.fromEntries(dimensions.map((dimension) => [dimension.id, dimension.applyToFields ? "fields" : "category"])),
   );
 
+  const [saving, startSaving] = useTransition();
+  // Submitted by hand rather than through a form action, because React resets a form after its
+  // action finishes, which put the Entire dimension / Specific attributes choice back as it was.
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startSaving(() => saveGroupPermissions(formData));
+  }
+
   return (
-    <form action={saveGroupPermissions} className="space-y-4 border-t border-line pt-3">
+    <form onSubmit={handleSubmit} className="space-y-4 border-t border-line pt-3">
       <input type="hidden" name="groupId" value={groupId} />
       <section className="space-y-1">
         <h3 className="flex items-center text-sm font-semibold">
@@ -114,7 +123,7 @@ export function GroupPermissionsForm({
           );
         })}
       </section>
-      <button className="btn" type="submit">Save group permissions</button>
+      <button className="btn" type="submit" disabled={saving}>{saving ? "Saving…" : "Save group permissions"}</button>
     </form>
   );
 }
