@@ -1,14 +1,18 @@
+import { redirect } from "next/navigation";
 import { login } from "@/app/login/actions";
 import { HelpTip } from "@/components/help-tip";
+import { endedSessionReason, getCurrentUser, idleMinutes } from "@/lib/session";
 import { siteName } from "@/lib/site";
 import { ssoButton, SSO_MESSAGES, type SsoReason } from "@/lib/sso";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; wait?: string; reason?: string }>;
+  searchParams: Promise<{ error?: string; wait?: string; reason?: string; idle?: string }>;
 }) {
   const params = await searchParams;
+  if (await getCurrentUser()) redirect("/dashboard");
+  const ended = params.error ? null : params.idle === "1" ? "idle" : await endedSessionReason();
   const name = await siteName();
   const sso = await ssoButton();
   return (
@@ -22,6 +26,14 @@ export default async function LoginPage({
         <p className="mt-2 text-sm text-muted">
           Use the administrator account created for this local database, or an account an administrator added.
         </p>
+        {ended === "idle" ? (
+          <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm" role="status">
+            You were signed out after {idleMinutes()} minutes without activity. Sign in again to continue.
+          </p>
+        ) : null}
+        {ended === "ended" ? (
+          <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm" role="status">Your sign-in has ended. Sign in again to continue.</p>
+        ) : null}
         {params.error === "1" ? (
           <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-danger">Email or password was not recognized.</p>
         ) : null}
