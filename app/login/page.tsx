@@ -13,6 +13,7 @@ export default async function LoginPage({
   const params = await searchParams;
   if (await getCurrentUser()) redirect("/dashboard");
   const ended = params.error ? null : params.idle === "1" ? "idle" : await endedSessionReason();
+  const idleLimit = await idleMinutes();
   const name = await siteName();
   const sso = await ssoButton();
   return (
@@ -28,7 +29,7 @@ export default async function LoginPage({
         </p>
         {ended === "idle" ? (
           <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm" role="status">
-            You were signed out after {idleMinutes()} minutes without activity. Sign in again to continue.
+            You were signed out after {idleLimit > 0 ? `${idleLimit} ${idleLimit === 1 ? "minute" : "minutes"}` : "a period"} without activity. Sign in again to continue.
           </p>
         ) : null}
         {ended === "ended" ? (

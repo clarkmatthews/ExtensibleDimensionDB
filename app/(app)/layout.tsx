@@ -15,7 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect("/login");
   const sso = await loadSsoSettings().catch(() => null);
   if (mustChooseOwnPassword(user, sso)) redirect("/account/password");
-  const [access, name] = await Promise.all([loadAccess(user), siteName()]);
+  const [access, name, idleLimit] = await Promise.all([loadAccess(user), siteName(), idleMinutes()]);
   // Notices about records outside this person's scope are not counted, matching the dashboard.
   const hidden = await noticeConstraint(access);
   const unread = await prisma.notification.count({ where: { userId: user.id, readAt: null, ...(hidden ? { AND: [hidden] } : {}) } });
@@ -23,7 +23,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <Shell name={user.name} email={user.email} canChangePassword={managesOwnPassword(user, sso)} siteName={name} unread={unread} allowedModules={allowedModules}>
       {children}
-      <SessionKeeper idleMinutes={idleMinutes()} />
+      {/* No timer when the Site page turns the idle limit off. */}
+      {idleLimit > 0 ? <SessionKeeper idleMinutes={idleLimit} /> : null}
     </Shell>
   );
 }

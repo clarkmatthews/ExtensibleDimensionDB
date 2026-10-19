@@ -970,6 +970,9 @@ model SsoSettings {
 model SiteSettings {
   id        String   @id @default("default")
   name      String   @default("Dimension database")
+  /// Minutes without activity before a browser sign-in ends. 0 means sign-ins never time out.
+  /// AI connections use their own tokens and are not affected.
+  sessionIdleMinutes Int @default(30)
   updatedAt DateTime @updatedAt
 }
 

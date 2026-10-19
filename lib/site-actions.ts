@@ -6,6 +6,7 @@ import { canEditModule, loadAccess } from "@/lib/permissions";
 import { audited } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { MAX_IDLE_MINUTES } from "@/lib/site";
 const SETTINGS_ID = "default";
 
 export async function saveSiteName(formData: FormData) {
@@ -17,10 +18,15 @@ export async function saveSiteName(formData: FormData) {
     const name = String(formData.get("name") ?? "").trim();
     if (!name) redirect("/admin/site?error=Enter%20a%20site%20name.");
     if (name.length > 80) redirect("/admin/site?error=The%20site%20name%20must%20be%2080%20characters%20or%20fewer.");
+    const idleText = String(formData.get("sessionIdleMinutes") ?? "").trim();
+    const sessionIdleMinutes = Number(idleText);
+    if (!/^\d+$/.test(idleText) || sessionIdleMinutes > MAX_IDLE_MINUTES) {
+      redirect(`/admin/site?error=${encodeURIComponent(`Enter the sign-out time as whole minutes from 0 to ${MAX_IDLE_MINUTES}. 0 means people are not signed out.`)}`);
+    }
     await prisma.siteSettings.upsert({
       where: { id: SETTINGS_ID },
-      create: { id: SETTINGS_ID, name },
-      update: { name },
+      create: { id: SETTINGS_ID, name, sessionIdleMinutes },
+      update: { name, sessionIdleMinutes },
     });
     revalidatePath("/", "layout");
     revalidatePath("/admin/site");
