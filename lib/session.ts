@@ -1,34 +1,30 @@
 import { cookies, headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { createSessionToken, readSessionPayload, SESSION_COOKIE, SESSION_TTL_MS } from "@/lib/session-token";
+import { sessionIdleMinutes } from "@/lib/site";
 
 export { SESSION_COOKIE };
 
 /** How often lastSeenAt is refreshed, so a busy page does not write on every request. */
 const TOUCH_INTERVAL_MS = 60 * 1000;
 
-/**
- * Minutes without activity before a sign-in ends: 30 unless SESSION_IDLE_MINUTES says otherwise
- * (5 to 1440). Activity is any page or request, and the browser reports typing and clicking too,
- * so someone filling in a long form is not signed out.
- */
-export function idleMinutes() {
-  const configured = Number.parseInt(process.env.SESSION_IDLE_MINUTES?.trim() ?? "", 10);
-  return Number.isFinite(configured) ? Math.min(1440, Math.max(5, configured)) : 30;
-}
+/** The idle limit set on the Site page, in minutes; 0 means sign-ins do not time out. */
+export const idleMinutes = sessionIdleMinutes;
 
 /**
- * True when a session has gone longer than the idle limit without activity. The server allows one
- * extra minute because activity is recorded about once a minute, so it never ends a sign-in
- * before the browser has shown its warning.
+ * True when a session has gone longer than the idle limit without activity; never when the limit
+ * is 0. Activity is any page or request, and the browser reports typing and clicking too. The
+ * server allows one extra minute because activity is recorded about once a minute, so it never
+ * ends a sign-in before the browser has shown its warning.
  */
-export function sessionIdle(lastSeenAt: Date, now = Date.now()) {
-  return now - lastSeenAt.getTime() > idleMinutes() * 60 * 1000 + TOUCH_INTERVAL_MS;
+export function sessionIdle(lastSeenAt: Date, minutes: number, now = Date.now()) {
+  if (minutes <= 0) return false;
+  return now - lastSeenAt.getTime() > minutes * 60 * 1000 + TOUCH_INTERVAL_MS;
 }
 
-/** Sessions last active before this moment have ended from inactivity. */
-export function idleCutoff(now = Date.now()) {
-  return new Date(now - idleMinutes() * 60 * 1000 - TOUCH_INTERVAL_MS);
+/** Sessions last active before this moment have ended from inactivity; null when there is no limit. */
+export function idleCutoff(minutes: number, now = Date.now()) {
+  return minutes > 0 ? new Date(now - minutes * 60 * 1000 - TOUCH_INTERVAL_MS) : null;
 }
 
 /** The signed-in person, or null. With touch, the session's activity time is always recorded. */
@@ -36,17 +32,20 @@ export async function getCurrentUser(options: { touch?: boolean } = {}) {
   const jar = await cookies();
   const payload = readSessionPayload(jar.get(SESSION_COOKIE)?.value);
   if (!payload) return null;
-  const session = await prisma.session.findUnique({
-    where: { id: payload.sid },
-    include: { user: { include: { groups: { include: { group: true } } } } },
-  });
+  const [session, minutes] = await Promise.all([
+    prisma.session.findUnique({
+      where: { id: payload.sid },
+      include: { user: { include: { groups: { include: { group: true } } } } },
+    }),
+    sessionIdleMinutes(),
+  ]);
   const now = Date.now();
   if (
     !session ||
     session.userId !== payload.userId ||
     session.revokedAt ||
     session.expiresAt.getTime() <= now ||
-    sessionIdle(session.lastSeenAt, now) ||
+    sessionIdle(session.lastSeenAt, minutes, now) ||
     !session.user.isActive
   ) {
     return null;
@@ -84,7 +83,7 @@ export async function endedSessionReason(): Promise<"idle" | "ended" | null> {
   if (!payload) return null;
   const session = await prisma.session.findUnique({ where: { id: payload.sid }, select: { revokedAt: true, lastSeenAt: true, expiresAt: true } });
   if (!session || session.revokedAt || session.expiresAt.getTime() <= Date.now()) return "ended";
-  return sessionIdle(session.lastSeenAt) ? "idle" : null;
+  return sessionIdle(session.lastSeenAt, await sessionIdleMinutes()) ? "idle" : null;
 }
 
 /** Signs out this browser: revokes its session row and removes the cookie. */
