@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition, type FormEvent } from "react";
+import { useRef, useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { DefaultStoreDialog } from "@/components/default-store-dialog";
 import { HelpTip } from "@/components/help-tip";
 import type { ListItem, ListPeer } from "@/components/list-config-dialog";
@@ -88,16 +88,43 @@ const empty = (): FieldDraft => ({
   ],
 });
 
+/** A small label beside an attribute's name. */
+function Badge({ children, tone = "plain" }: { children: ReactNode; tone?: "plain" | "strong" | "muted" }) {
+  const styles = {
+    plain: "border-line bg-paper text-ink",
+    strong: "border-pine/30 bg-pine/10 text-pine",
+    muted: "border-line bg-paper text-muted",
+  }[tone];
+  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${styles}`}>{children}</span>;
+}
+
+/**
+ * One attribute of a dimension: a row with its name, key, type, flags, and actions, that opens
+ * into its settings. Without `initial` it is the dimension's Add attribute button, which opens
+ * an empty form and closes again once the new attribute is saved.
+ */
 export function FieldForm({
   categoryId,
+  categoryName = "",
   initial,
+  isActive = true,
+  editable = true,
+  actions,
   lists = [],
   catalogs = [],
   canManageLists = false,
   recordTypes = [],
 }: {
   categoryId: string;
+  /** The dimension's name, shown on the Add attribute button and the new attribute's form. */
+  categoryName?: string;
   initial?: FieldDraft;
+  /** False for a hidden attribute, which is shown dimmed with a Hidden badge. */
+  isActive?: boolean;
+  /** False when the person may not edit attributes here: the row shows, without its settings. */
+  editable?: boolean;
+  /** Move, hide, and delete controls for the row. */
+  actions?: ReactNode;
   lists?: ListPeer[];
   catalogs?: FieldListChoice[];
   canManageLists?: boolean;
@@ -105,7 +132,7 @@ export function FieldForm({
 }) {
   const [draft, setDraft] = useState<FieldDraft>(initial ?? empty());
   const [error, setError] = useState("");
-  const [open, setOpen] = useState(!initial);
+  const [open, setOpen] = useState(false);
   const [askStores, setAskStores] = useState(false);
   const [pendingDefault, setPendingDefault] = useState(initial?.defaultValue ?? "");
   const formRef = useRef<HTMLFormElement>(null);
@@ -146,6 +173,17 @@ export function FieldForm({
     formData.set("dataType", draft.dataType);
     const result = await saveField(formData);
     setError(result?.error ?? "");
+    // A new attribute now appears in the list above, so the add form empties and closes.
+    if (!initial && !result?.error) {
+      setDraft(empty());
+      setOpen(false);
+    }
+  }
+
+  function cancelNew() {
+    setDraft(empty());
+    setError("");
+    setOpen(false);
   }
 
   // Submitted by hand rather than through a form action, because React resets a form after its
@@ -161,17 +199,71 @@ export function FieldForm({
   const isFile = draft.dataType === "FILE";
   const selectedCatalog = catalogs.find((catalog) => catalog.id === draft.choiceListId);
 
+  const formId = `attribute-${initial?.id ?? `new-${categoryId}`}`;
+  const savedName = initial?.friendlyName ?? "";
+
+  const header = initial ? (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+      <div className={`flex min-w-0 flex-1 flex-wrap items-center gap-2 ${isActive ? "" : "opacity-60"}`}>
+        <span className="font-semibold">{savedName}</span>
+        <span className="font-mono text-xs text-muted">{initial.key}</span>
+        <Badge>{TYPE_LABELS[initial.dataType]}</Badge>
+        {initial.isStoreKey ? <Badge tone="strong">Unique identifier</Badge> : null}
+        {initial.isRequired ? <Badge tone="strong">Required</Badge> : null}
+        {!isActive ? <Badge tone="muted">Hidden</Badge> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {actions}
+        {editable ? (
+          <button
+            className={open ? "btn" : "btn-quiet"}
+            type="button"
+            aria-expanded={open}
+            aria-controls={formId}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? "Close" : "Edit"}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
+
+  if (!initial && !open) {
+    return (
+      <div className="px-4 py-3">
+        <button
+          className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-3 text-sm font-semibold text-pine hover:border-pine hover:bg-pine/5"
+          type="button"
+          aria-expanded={false}
+          aria-controls={formId}
+          onClick={() => setOpen(true)}
+        >
+          <span aria-hidden="true" className="text-lg leading-none">+</span>
+          Add attribute{categoryName ? ` to ${categoryName}` : ""}
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="border-t border-line">
-      <button className="flex w-full items-center justify-between px-4 py-3 text-left" type="button" onClick={() => setOpen((value) => !value)}>
-        <span>
-          <span className="font-medium">{draft.friendlyName || "New attribute"}</span>
-          <span className="ml-2 font-mono text-xs text-muted">{draft.key}</span>
-        </span>
-        <span className="text-xs text-muted">{open ? "Hide" : "Edit"}</span>
-      </button>
+    <div className={initial ? `border-t border-line ${open ? "bg-pine/5" : ""}` : "px-4 py-3"}>
+      {header}
       {open ? (
-        <form ref={formRef} onSubmit={handleSubmit} className="grid gap-3 px-4 pb-4 md:grid-cols-2">
+        <section
+          id={formId}
+          aria-label={initial ? `Editing ${savedName}` : "New attribute"}
+          className={initial ? "mx-4 mb-4 rounded-lg border-2 border-pine/40 bg-card shadow-sm" : "rounded-lg border-2 border-pine bg-card shadow-sm"}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
+            <h3 className="font-semibold text-pine">
+              {initial ? <>Editing <span className="text-ink">{savedName}</span></> : <>New attribute{categoryName ? <> in <span className="text-ink">{categoryName}</span></> : null}</>}
+            </h3>
+            {!initial ? (
+              <button className="btn-quiet" type="button" onClick={cancelNew}>Cancel</button>
+            ) : null}
+          </div>
+        <form ref={formRef} onSubmit={handleSubmit} className="grid gap-3 p-4 md:grid-cols-2">
           <input type="hidden" name="id" value={draft.id} />
           <input type="hidden" name="categoryId" value={categoryId} />
           <input type="hidden" name="choiceSource" value={draft.choiceSource} />
@@ -438,10 +530,16 @@ export function FieldForm({
           ) : null}
           <div className="md:col-span-2">
             <button className="btn" type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save attribute"}
+              {saving ? "Saving…" : initial ? "Save attribute" : "Add attribute"}
             </button>
+            {initial ? (
+              <button className="btn-quiet ml-2" type="button" onClick={() => setOpen(false)}>Close</button>
+            ) : (
+              <button className="btn-quiet ml-2" type="button" onClick={cancelNew}>Cancel</button>
+            )}
           </div>
         </form>
+        </section>
       ) : null}
       {askStores && draft.id ? (
         <DefaultStoreDialog fieldId={draft.id} value={pendingDefault} onClose={closeStorePrompt} />

@@ -16,13 +16,13 @@ export function proxy(request: NextRequest) {
     path === "/oauth/register" ||
     path === "/oauth/token" ||
     path === "/oauth/authorize" ||
-    path === "/api/mcp";
+    path === "/api/mcp" ||
+    path === "/api/session";
   if (!userId && !isPublic) {
     return NextResponse.redirect(new URL("/login", requestOrigin(request)));
   }
-  if (userId && path === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", requestOrigin(request)));
-  }
+  // The sign-in page sends someone who is still signed in to the dashboard itself. Doing it here,
+  // from the cookie alone, looped between /login and /dashboard for a sign-in that had ended.
   return NextResponse.next();
 }
 

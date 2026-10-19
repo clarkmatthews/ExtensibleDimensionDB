@@ -19,7 +19,7 @@ import {
   moduleAccessIn,
 } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser, idleCutoff } from "@/lib/session";
 
 export default async function UserPage({
   params,
@@ -91,7 +91,8 @@ export default async function UserPage({
   });
   const memberGroups = new Set(account.groups.map((membership) => membership.groupId));
   const activeSessions = await prisma.session.findMany({
-    where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() } },
+    // Sign-ins that ended from inactivity are not listed as active.
+    where: { userId: id, revokedAt: null, expiresAt: { gt: new Date() }, lastSeenAt: { gt: idleCutoff() } },
     orderBy: { lastSeenAt: "desc" },
     select: { id: true, lastSeenAt: true, userAgent: true },
   });

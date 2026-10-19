@@ -204,6 +204,9 @@ export default async function DefinitionPage({
             <summary className="section-toggle flex cursor-pointer items-center gap-2 px-4 py-3 text-lg font-semibold">
               <span className="mark" aria-hidden="true" />
               {category.name}
+              <span className="text-sm font-normal text-muted">
+                {category.fields.length === 1 ? "1 attribute" : `${category.fields.length} attributes`}
+              </span>
             </summary>
             <div className="border-t border-line">
             <div className="flex flex-wrap items-end gap-3 p-4">
@@ -238,9 +241,12 @@ export default async function DefinitionPage({
                     <button className="btn-quiet" type="submit">Down</button>
                   </form>
                 ) : null}
-                {canCreate ? <ConfirmDelete id={category.id} preview={previewCategoryDelete} commit={deleteCategory} /> : null}
+                {canCreate ? <ConfirmDelete id={category.id} label="Delete dimension" preview={previewCategoryDelete} commit={deleteCategory} /> : null}
               </div>
             </div>
+            <h3 className="border-t border-line bg-paper px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted">
+              Attributes in {category.name}
+            </h3>
             {category.fields.map((field, fieldIndex) => {
               const draft: FieldDraft = {
                 id: field.id,
@@ -279,49 +285,56 @@ export default async function DefinitionPage({
                   parentValues: option.parentValues,
                 })),
               };
-              return (
-                <div key={field.id}>
-                  <div className="flex items-center justify-between gap-3 px-4 pt-3 text-sm">
-                    <span className={field.isActive ? "" : "text-muted line-through"}>{field.friendlyName}</span>
-                    <span className="flex gap-2">
-                      {canEditCategory && fieldIndex > 0 ? (
-                        <form action={moveField}>
-                          <input type="hidden" name="id" value={field.id} />
-                          <input type="hidden" name="direction" value="up" />
-                          <button className="btn-quiet" type="submit">Up</button>
-                        </form>
-                      ) : null}
-                      {canEditCategory && fieldIndex < category.fields.length - 1 ? (
-                        <form action={moveField}>
-                          <input type="hidden" name="id" value={field.id} />
-                          <input type="hidden" name="direction" value="down" />
-                          <button className="btn-quiet" type="submit">Down</button>
-                        </form>
-                      ) : null}
-                      {(moduleEdit && (field.isActive ? user.isAdmin || rights.canRemoveFields : user.isAdmin || rights.canAddFields)) ? (
-                        <form action={setFieldActive}>
-                          <input type="hidden" name="id" value={field.id} />
-                          <input type="hidden" name="active" value={field.isActive ? "0" : "1"} />
-                          <button className="btn-quiet" type="submit">{field.isActive ? "Hide" : "Activate"}</button>
-                        </form>
-                      ) : null}
-                      {moduleEdit && (user.isAdmin || rights.canRemoveFields) ? (
-                        <ConfirmDelete id={field.id} preview={previewFieldDelete} commit={deleteField} />
-                      ) : null}
-                    </span>
-                  </div>
-                  {canEditFields ? (
-                    <FieldForm categoryId={category.id} initial={draft} lists={followFieldsFor(category.recordTypeId)} catalogs={catalogs} canManageLists={canManageLists} recordTypes={typeOptions} />
+              const actions = (
+                <>
+                  {/* Both arrows always take their place, so the buttons line up from row to row. */}
+                  {canEditCategory ? (
+                    <form action={moveField}>
+                      <input type="hidden" name="id" value={field.id} />
+                      <input type="hidden" name="direction" value="up" />
+                      <button className="btn-quiet disabled:invisible" type="submit" disabled={fieldIndex === 0} aria-label={`Move ${field.friendlyName} up`} title="Move up">↑</button>
+                    </form>
                   ) : null}
-                </div>
+                  {canEditCategory ? (
+                    <form action={moveField}>
+                      <input type="hidden" name="id" value={field.id} />
+                      <input type="hidden" name="direction" value="down" />
+                      <button className="btn-quiet disabled:invisible" type="submit" disabled={fieldIndex === category.fields.length - 1} aria-label={`Move ${field.friendlyName} down`} title="Move down">↓</button>
+                    </form>
+                  ) : null}
+                  {(moduleEdit && (field.isActive ? user.isAdmin || rights.canRemoveFields : user.isAdmin || rights.canAddFields)) ? (
+                    <form action={setFieldActive}>
+                      <input type="hidden" name="id" value={field.id} />
+                      <input type="hidden" name="active" value={field.isActive ? "0" : "1"} />
+                      <button className="btn-quiet" type="submit" title={field.isActive ? "Hide this attribute from records and lists" : "Show this attribute again"}>
+                        {field.isActive ? "Hide attribute" : "Show attribute"}
+                      </button>
+                    </form>
+                  ) : null}
+                  {moduleEdit && (user.isAdmin || rights.canRemoveFields) ? (
+                    <ConfirmDelete id={field.id} preview={previewFieldDelete} commit={deleteField} />
+                  ) : null}
+                </>
+              );
+              return (
+                <FieldForm
+                  key={field.id}
+                  categoryId={category.id}
+                  initial={draft}
+                  isActive={field.isActive}
+                  editable={canEditFields}
+                  actions={actions}
+                  lists={followFieldsFor(category.recordTypeId)}
+                  catalogs={catalogs}
+                  canManageLists={canManageLists}
+                  recordTypes={typeOptions}
+                />
               );
             })}
+            {category.fields.length === 0 ? <p className="border-t border-line px-4 py-3 text-sm text-muted">No attributes yet.</p> : null}
             {canAdd ? (
-              <div className="p-4">
-                <h3 className="mb-2 text-sm font-semibold">Add attribute</h3>
-                <div className="rounded-lg border border-line">
-                  <FieldForm categoryId={category.id} lists={followFieldsFor(category.recordTypeId)} catalogs={catalogs} canManageLists={canManageLists} recordTypes={typeOptions} />
-                </div>
+              <div className="border-t border-line">
+                <FieldForm categoryId={category.id} categoryName={category.name} lists={followFieldsFor(category.recordTypeId)} catalogs={catalogs} canManageLists={canManageLists} recordTypes={typeOptions} />
               </div>
             ) : null}
             </div>

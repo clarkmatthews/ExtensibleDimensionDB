@@ -287,7 +287,7 @@ A password an administrator sets for someone who is not an administrator, whethe
 
 ## Security
 
-- **Sessions** are stored on the server. Signing out ends that browser's session. Changing a password or disabling an account signs the person out everywhere.
+- **Sessions** are stored on the server. Signing out ends that browser's session. Changing a password or disabling an account signs the person out everywhere. A sign-in also ends after 30 minutes without activity (`SESSION_IDLE_MINUTES`). Typing, clicking, and scrolling count, in any open tab, so a long form does not end it; two minutes before the limit a notice offers **Stay signed in**, and the sign-in page then says why the person was signed out.
 - **Sign-in throttling** slows guessing without locking anyone out: after 5 failures for an email, each attempt waits a little longer, up to 5 minutes. Repeated failures from one address are blocked per address.
 - **Attribute permissions apply everywhere.** Notifications, emails, the dashboard, the changelog, exports, and AI tools only show values a person is allowed to view.
 - **Secrets are stored hashed or encrypted.** Share secrets and AI tokens are hashed and shown once. Webhook signing secrets, the single sign-on client secret, and the SMTP password are encrypted with `AUTH_SECRET`.
@@ -307,6 +307,7 @@ Settings are read from `.env`. Only `DATABASE_URL` and `AUTH_SECRET` are require
 | `ADMIN_PASSWORD` | Password for `admin@local`, used only when the seed creates that account. |
 | `APP_URL` | Public address of the app, such as `https://dimensions.example.com`. Used for the single sign-on redirect URI. |
 | `TRUST_PROXY` | `true` when a reverse proxy sets `X-Forwarded-For` to the real client address. |
+| `SESSION_IDLE_MINUTES` | Minutes without activity before someone is signed out. Default 30, from 5 to 1440. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Email delivery until Email Config is saved. |
 | `SCHEDULER` | `off` to stop the built-in background jobs and use an outside scheduler. |
 | `OVERDUE_CHECK_MINUTES` | Minutes between overdue checks. Default 15. |

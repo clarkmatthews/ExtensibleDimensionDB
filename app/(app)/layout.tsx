@@ -5,7 +5,8 @@ import { managesOwnPassword, mustChooseOwnPassword } from "@/lib/password-policy
 import { canViewModule, loadAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { noticeConstraint } from "@/lib/row-scope";
-import { getCurrentUser } from "@/lib/session";
+import { SessionKeeper } from "@/components/session-keeper";
+import { getCurrentUser, idleMinutes } from "@/lib/session";
 import { siteName } from "@/lib/site";
 import { loadSsoSettings } from "@/lib/sso";
 
@@ -22,6 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <Shell name={user.name} email={user.email} canChangePassword={managesOwnPassword(user, sso)} siteName={name} unread={unread} allowedModules={allowedModules}>
       {children}
+      <SessionKeeper idleMinutes={idleMinutes()} />
     </Shell>
   );
 }
