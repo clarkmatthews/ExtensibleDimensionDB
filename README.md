@@ -30,6 +30,7 @@ The name in the header, on the sign-in page, and in the browser title is a site 
 - [Configuration](#configuration)
 - [Operations](#operations)
 - [Stack](#stack)
+- [License](#license)
 
 ## Getting started
 
@@ -332,3 +333,7 @@ Settings are read from `.env`. Only `DATABASE_URL` and `AUTH_SECRET` are require
 - Model Context Protocol server (stdio and Streamable HTTP)
 - Nodemailer for optional SMTP delivery
 - Vitest for tests
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Clark Matthews.
